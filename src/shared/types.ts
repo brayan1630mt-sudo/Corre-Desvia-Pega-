@@ -9,10 +9,42 @@ export interface Vector2 {
   z: number;
 }
 
+export type PowerUpType =
+  | "speed"
+  | "jump"
+  | "invisibility"
+  | "freeze"
+  | "grapple";
+
+export interface Vector3 {
+  x: number;
+  y: number;
+  z: number;
+}
+
+export interface PowerUpState {
+  type: PowerUpType;
+  x: number;
+  z: number;
+}
+
+export interface SnowballState {
+  id: string;
+  ownerId: string;
+  x: number;
+  y: number;
+  z: number;
+}
+
 export interface PlayerInput {
   forward: number;
   right: number;
   sprint: boolean;
+  jump: boolean;
+  dash: boolean;
+  usePower: boolean;
+  yaw: number;
+  pitch: number;
 }
 
 export interface PlayerState {
@@ -20,13 +52,22 @@ export interface PlayerState {
   name: string;
   color: string;
   x: number;
+  y: number;
   z: number;
+  powerUp: PowerUpType | null;
+  powerUpExpiresAt: number;
+  isInvisible: boolean;
+  isFrozen: boolean;
+  grappleAnchor: Vector3 | null;
+  dashCooldownEndsAt: number;
+  survivalPoints: number;
   rotation: number;
+  pitch: number;
   isIt: boolean;
+  isMoving: boolean;
   isSprinting: boolean;
+  isDashing: boolean;
   isReady: boolean;
-  catches: number;
-  caughtCount: number;
   connected: boolean;
 }
 
@@ -34,6 +75,8 @@ export interface RoomState {
   code: string;
   phase: GamePhase;
   players: PlayerState[];
+  powerUp: PowerUpState | null;
+  snowballs: SnowballState[];
   hostId: string;
   itPlayerId: string | null;
   timeLeft: number;
@@ -46,6 +89,7 @@ export interface RoomState {
 export interface JoinPayload {
   name: string;
   roomCode?: string;
+  color?: string;
 }
 
 export interface JoinedPayload {
@@ -93,9 +137,20 @@ export interface GameSocketEvents {
   "game:countdown": (value: number) => void;
 }
 
+export interface GameClientEvents {
+  "room:create": (payload: JoinPayload) => void;
+  "room:join": (payload: JoinPayload) => void;
+  "room:quick-play": (payload: Pick<JoinPayload, "name" | "color">) => void;
+  "room:leave": () => void;
+  "room:ready": (ready: boolean) => void;
+  "game:start": () => void;
+  "game:input": (input: PlayerInput) => void;
+}
+
 export interface LobbyPreferences {
   displayName: string;
   lastRoomCode: string;
+  playerColor: string;
   soundEnabled: boolean;
   reducedMotion: boolean;
   showHints: boolean;
@@ -110,6 +165,7 @@ export interface GameSettings {
 
 export interface PlayerSnapshot {
   x: number;
+  y: number;
   z: number;
   rotation: number;
   at: number;
@@ -121,7 +177,8 @@ export interface ObstacleShape {
   width: number;
   depth: number;
   height: number;
-  kind: "tree" | "block";
+  collisionHeight: number;
+  kind: "building" | "barrier";
 }
 
 export interface NotificationItem {
@@ -132,9 +189,15 @@ export interface NotificationItem {
 }
 
 export interface LobbyActionCallbacks {
-  onCreateRoom: (name: string) => void;
-  onJoinRoom: (name: string, roomCode: string) => void;
-  onQuickPlay: (name: string) => void;
+  onCreateRoom: (name: string, color: string) => void;
+  onJoinRoom: (name: string, roomCode: string, color: string) => void;
+  onQuickPlay: (name: string, color: string) => void;
+  onPlayerColorChange: (color: string) => void;
+  onUsePower: () => void;
+  onPowerUp: (
+    type: PowerUpType,
+    action: "collected" | "used",
+  ) => void;
   onStartGame: () => void;
   onLeaveRoom: () => void;
   onCopyCode: () => void;

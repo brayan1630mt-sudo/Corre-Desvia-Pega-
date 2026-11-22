@@ -1,4 +1,8 @@
-import { ARENA, OBSTACLES } from "./constants.ts";
+import {
+  ARENA,
+  CLIMBABLE_PLATFORMS,
+  OBSTACLES,
+} from "./constants.ts";
 import type { Vector2 } from "./types.ts";
 
 export function clamp(value: number, min: number, max: number): number {
@@ -73,13 +77,14 @@ export function circleIntersectsRectangle(
   );
   const dx = point.x - nearestX;
   const dz = point.z - nearestZ;
-  return dx * dx + dz * dz < radius * radius;
+  return dx * dx + dz * dz <= radius * radius;
 }
 
 export function resolveArenaPosition(
   start: Vector2,
   movement: Vector2,
   radius = ARENA.playerRadius,
+  playerY = 0,
 ): Vector2 {
   const next = {
     x: clamp(
@@ -95,6 +100,10 @@ export function resolveArenaPosition(
   };
 
   for (const obstacle of OBSTACLES) {
+    if (playerY >= obstacle.collisionHeight - 0.02) {
+      continue;
+    }
+
     const expanded = {
       x: obstacle.x,
       z: obstacle.z,
@@ -108,9 +117,39 @@ export function resolveArenaPosition(
     const overlapX = expanded.width / 2 - Math.abs(next.x - obstacle.x);
     const overlapZ = expanded.depth / 2 - Math.abs(next.z - obstacle.z);
     if (overlapX < overlapZ) {
-      next.x = obstacle.x + Math.sign(next.x - obstacle.x) * expanded.width / 2;
+      const direction = Math.sign(next.x - obstacle.x) || Math.sign(movement.x) || 1;
+      next.x = obstacle.x + direction * expanded.width / 2;
     } else {
-      next.z = obstacle.z + Math.sign(next.z - obstacle.z) * expanded.depth / 2;
+      const direction = Math.sign(next.z - obstacle.z) || Math.sign(movement.z) || 1;
+      next.z = obstacle.z + direction * expanded.depth / 2;
+    }
+  }
+
+  for (const platform of CLIMBABLE_PLATFORMS) {
+    if (playerY >= platform.height - 0.02) {
+      continue;
+    }
+
+    const expanded = {
+      x: platform.x,
+      z: platform.z,
+      width: platform.width + radius * 2,
+      depth: platform.depth + radius * 2,
+    };
+    if (!circleIntersectsRectangle(next, 0, expanded)) {
+      continue;
+    }
+
+    const overlapX = expanded.width / 2 - Math.abs(next.x - platform.x);
+    const overlapZ = expanded.depth / 2 - Math.abs(next.z - platform.z);
+    if (overlapX < overlapZ) {
+      const direction =
+        Math.sign(next.x - platform.x) || Math.sign(movement.x) || 1;
+      next.x = platform.x + direction * expanded.width / 2;
+    } else {
+      const direction =
+        Math.sign(next.z - platform.z) || Math.sign(movement.z) || 1;
+      next.z = platform.z + direction * expanded.depth / 2;
     }
   }
 

@@ -8,6 +8,7 @@ import {
   GameRoom,
   sanitizePlayerName,
 } from "./room.js";
+import { PLAYER_COLORS } from "../src/shared/constants.ts";
 
 const PORT = Number(process.env.PORT) || 3000;
 const ROOT_DIRECTORY = path.resolve(
@@ -35,7 +36,16 @@ const rooms = new Map();
 const playerRooms = new Map();
 
 app.disable("x-powered-by");
-app.use(express.static(CLIENT_DIRECTORY, { maxAge: "1h" }));
+app.use(
+  express.static(CLIENT_DIRECTORY, {
+    maxAge: "1h",
+    setHeaders(response, filePath) {
+      if (path.basename(filePath) === "index.html") {
+        response.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+      }
+    },
+  }),
+);
 
 app.get("/health", (_request, response) => {
   response.status(200).json({
@@ -60,8 +70,12 @@ app.get("/api/status", (_request, response) => {
   });
 });
 
-app.get("*", (request, response, next) => {
-  if (request.path.startsWith("/api/") || request.path.startsWith("/socket.io/")) {
+app.use((request, response, next) => {
+  if (
+    request.method !== "GET" ||
+    request.path.startsWith("/api/") ||
+    request.path.startsWith("/socket.io/")
+  ) {
     next();
     return;
   }
@@ -85,6 +99,13 @@ function broadcastRoom(room) {
 
 function sendRoomError(socket, code, message) {
   socket.emit("room:error", { code, message });
+}
+
+function hasInvalidPlayerColor(color) {
+  return (
+    color !== undefined &&
+    !PLAYER_COLORS.some((option) => option === color)
+  );
 }
 
 function getRoomForSocket(socket) {
@@ -132,7 +153,7 @@ function leaveCurrentRoom(socket) {
   }
 }
 
-function joinRoom(socket, room, name) {
+function joinRoom(socket, room, name, color) {
   const cleanName = sanitizePlayerName(name);
   if (!cleanName) {
     sendRoomError(socket, "INVALID_NAME", "Escolha um nome com pelo menos 1 caractere.");
@@ -144,7 +165,7 @@ function joinRoom(socket, room, name) {
   }
 
   try {
-    room.addPlayer(socket.id, cleanName);
+    room.addPlayer(socket.id, cleanName, color);
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Não foi possível entrar na sala.";
@@ -176,13 +197,27 @@ function chooseOpenRoom() {
 
 io.on("connection", (socket) => {
   socket.on("room:create", (payload = {}) => {
+    const request = payload && typeof payload === "object" ? payload : {};
+    if (!sanitizePlayerName(request.name)) {
+      sendRoomError(socket, "INVALID_NAME", "Escolha um nome com pelo menos 1 caractere.");
+      return;
+    }
+    if (hasInvalidPlayerColor(request.color)) {
+      sendRoomError(socket, "INVALID_INPUT", "Escolha uma cor disponível para o personagem.");
+      return;
+    }
     leaveCurrentRoom(socket);
     const room = createRoom();
-    joinRoom(socket, room, payload.name);
+    joinRoom(socket, room, request.name, request.color);
   });
 
   socket.on("room:join", (payload = {}) => {
-    const room = findRoom(payload.roomCode);
+    const request = payload && typeof payload === "object" ? payload : {};
+    if (hasInvalidPlayerColor(request.color)) {
+      sendRoomError(socket, "INVALID_INPUT", "Escolha uma cor disponível para o personagem.");
+      return;
+    }
+    const room = findRoom(request.roomCode);
     if (!room) {
       sendRoomError(socket, "ROOM_NOT_FOUND", "Não encontramos essa sala. Confira o código.");
       return;
@@ -196,17 +231,22 @@ io.on("connection", (socket) => {
       return;
     }
     leaveCurrentRoom(socket);
-    joinRoom(socket, room, payload.name);
+    joinRoom(socket, room, request.name, request.color);
   });
 
   socket.on("room:quick-play", (payload = {}) => {
-    const name = sanitizePlayerName(payload.name);
+    const request = payload && typeof payload === "object" ? payload : {};
+    const name = sanitizePlayerName(request.name);
     if (!name) {
       sendRoomError(socket, "INVALID_NAME", "Escolha um nome antes de jogar.");
       return;
     }
+    if (hasInvalidPlayerColor(request.color)) {
+      sendRoomError(socket, "INVALID_INPUT", "Escolha uma cor disponível para o personagem.");
+      return;
+    }
     leaveCurrentRoom(socket);
-    joinRoom(socket, chooseOpenRoom(), name);
+    joinRoom(socket, chooseOpenRoom(), name, request.color);
   });
 
   socket.on("room:leave", () => {

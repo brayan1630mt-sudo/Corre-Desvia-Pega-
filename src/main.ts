@@ -44,6 +44,10 @@ function readPreferences(): LobbyPreferences {
         DEFAULT_PREFERENCES.playerColor,
       soundEnabled:
         typeof value.soundEnabled === "boolean" ? value.soundEnabled : true,
+      showHints:
+        typeof value.showHints === "boolean"
+          ? value.showHints
+          : DEFAULT_PREFERENCES.showHints,
     };
   } catch (error) {
     console.warn("Não foi possível carregar as preferências do jogo.", error);
@@ -127,6 +131,11 @@ const network = new NetworkClient({
   },
   onFeed: (event: FeedEvent) => {
     hud.addFeedEvent(event);
+  },
+  onHint: ({ text }) => {
+    if (preferences.showHints) {
+      hud.showNotification(text, "neutral", 5000);
+    }
   },
   onConnection: (connected) => {
     hud.setConnectionStatus(connected);

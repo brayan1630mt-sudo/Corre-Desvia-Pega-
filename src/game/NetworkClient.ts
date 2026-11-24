@@ -5,6 +5,7 @@ import type {
   GameClientEvents,
   GameError,
   GameSocketEvents,
+  HintEvent,
   JoinPayload,
   PlayerInput,
   RoomState,
@@ -17,6 +18,7 @@ type ClientEvents = {
   onError: (error: GameError) => void;
   onTag: (event: TagEvent) => void;
   onFeed: (event: FeedEvent) => void;
+  onHint: (event: HintEvent) => void;
   onConnection: (connected: boolean) => void;
 };
 
@@ -126,6 +128,9 @@ export class NetworkClient {
     });
     this.socket.on("game:feed", (event) => {
       this.listeners.onFeed(event);
+    });
+    this.socket.on("game:hint", (event) => {
+      this.listeners.onHint(event);
     });
   }
 }

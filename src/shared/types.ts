@@ -126,12 +126,17 @@ export interface FeedEvent {
   createdAt: number;
 }
 
+export interface HintEvent {
+  text: string;
+}
+
 export interface GameSocketEvents {
   "room:state": (state: RoomState) => void;
   "room:joined": (payload: JoinedPayload) => void;
   "room:error": (error: GameError) => void;
   "game:tag": (event: TagEvent) => void;
   "game:feed": (event: FeedEvent) => void;
+  "game:hint": (event: HintEvent) => void;
   "game:started": (state: RoomState) => void;
   "game:ended": (state: RoomState) => void;
   "game:countdown": (value: number) => void;

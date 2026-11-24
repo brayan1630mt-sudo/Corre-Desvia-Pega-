@@ -43,6 +43,8 @@ function icon(name: string): string {
       '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/>',
     spark:
       '<path d="m12 3 1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8L12 3ZM19 15l.9 2.1L22 18l-2.1.9L19 21l-.9-2.1L16 18l2.1-.9L19 15Z"/>',
+    fullscreen:
+      '<path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M21 16v3a2 2 0 0 1-2 2h-3M8 21H5a2 2 0 0 1-2-2v-3"/>',
   };
   return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths[name] ?? paths.spark}</svg>`;
 }
@@ -69,6 +71,9 @@ export class Hud {
   private isGameplayPhase = false;
   private readonly handleOrientationChange = (): void => {
     this.updateOrientationPrompt();
+  };
+  private readonly handleFullscreenChange = (): void => {
+    this.setFullscreenActive(Boolean(document.fullscreenElement));
   };
 
   constructor(root: HTMLElement, callbacks: LobbyActionCallbacks) {
@@ -107,6 +112,7 @@ export class Hud {
       "change",
       this.handleOrientationChange,
     );
+    document.addEventListener("fullscreenchange", this.handleFullscreenChange);
     this.bind();
     this.renderHome();
   }
@@ -296,6 +302,24 @@ export class Hud {
     }
   }
 
+  setFullscreenActive(active: boolean): void {
+    const button = this.root.querySelector<HTMLButtonElement>(
+      '[data-action="fullscreen"]',
+    );
+    if (!button) {
+      return;
+    }
+    button.setAttribute("aria-pressed", String(active));
+    button.setAttribute(
+      "aria-label",
+      active ? "Sair da tela cheia" : "Ativar tela cheia",
+    );
+    const label = button.querySelector<HTMLElement>("[data-fullscreen-label]");
+    if (label) {
+      label.textContent = active ? "Sair da tela cheia" : "Ativar tela cheia";
+    }
+  }
+
   getWorldStage(): HTMLElement {
     return this.requireElement("#world-stage");
   }
@@ -370,6 +394,8 @@ export class Hud {
       this.callbacks.onStartGame();
     } else if (action === "power") {
       this.callbacks.onUsePower();
+    } else if (action === "fullscreen") {
+      this.callbacks.onToggleFullscreen();
     } else if (action === "leave-room") {
       this.callbacks.onLeaveRoom();
     } else if (action === "copy-code") {
@@ -502,6 +528,11 @@ export class Hud {
                 ).join("")}
               </div>
             </div>
+            ${this.isPhone
+              ? `<button type="button" class="button button-secondary fullscreen-menu-button" data-action="fullscreen" aria-label="Ativar tela cheia" aria-pressed="false">
+                  ${icon("fullscreen")}<span data-fullscreen-label>Ativar tela cheia</span>
+                </button>`
+              : ""}
             <button type="submit" class="button button-primary button-main" data-action="quick-play">
               <span>Jogar agora</span>${icon("arrow")}
             </button>
@@ -537,6 +568,7 @@ export class Hud {
     this.updateColorPalette();
     this.setSoundEnabled(this.soundEnabled);
     this.setConnectionStatus(this.connected);
+    this.setFullscreenActive(Boolean(document.fullscreenElement));
   }
 
   private renderRoomScreen(): void {

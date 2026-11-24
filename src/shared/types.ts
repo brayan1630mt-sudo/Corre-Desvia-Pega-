@@ -248,5 +248,6 @@ export interface LobbyActionCallbacks {
   onLeaveRoom: () => void;
   onCopyCode: () => void;
   onToggleSound: (enabled: boolean) => void;
+  onToggleFullscreen: () => void;
   onReady: (ready: boolean) => void;
 }

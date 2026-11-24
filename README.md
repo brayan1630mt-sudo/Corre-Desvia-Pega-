@@ -41,7 +41,9 @@ Vite, Express e Socket.IO. A interface e as mensagens estão em português.
   dimensões da tela. Em celulares, durante a contagem regressiva e a partida,
   uma tela pede orientação horizontal se o aparelho estiver em pé; notebooks e
   desktops não são bloqueados. O navegador não distingue notebook de desktop
-  com confiabilidade, então ambos são classificados como computador.
+  com confiabilidade, então ambos são classificados como computador. O menu
+  também oferece tela cheia no celular; o navegador exige um toque do usuário e
+  pode não suportar esse recurso em todos os aparelhos.
 - Trilha instrumental procedural em volume baixo, iniciada após o primeiro toque
   ou clique (restrição de autoplay do navegador) e silenciada junto dos efeitos.
 - Endpoint `/health` para monitoramento e Blueprint `render.yaml`.

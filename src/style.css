@@ -712,6 +712,24 @@ svg {
   padding-left: 15px;
 }
 
+.name-form > .fullscreen-menu-button {
+  min-height: 44px;
+  justify-content: center;
+  gap: 9px;
+  margin-top: 2px;
+  font-size: 11px;
+}
+
+.fullscreen-menu-button svg {
+  width: 17px;
+  height: 17px;
+}
+
+.fullscreen-menu-button[aria-pressed="true"] {
+  border-color: #9bd8bd;
+  background: #e9f8ef;
+}
+
 .button-plus {
   display: grid;
   width: 23px;

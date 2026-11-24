@@ -117,6 +117,43 @@ const sound = new SoundEffects();
 sound.setEnabled(preferences.soundEnabled);
 
 let hud: Hud;
+
+async function toggleFullscreen(): Promise<void> {
+  if (document.fullscreenElement) {
+    try {
+      await document.exitFullscreen();
+    } catch (error) {
+      console.warn("Não foi possível sair da tela cheia.", error);
+      hud.showNotification("Não foi possível sair da tela cheia.", "warning");
+    }
+    return;
+  }
+
+  if (typeof document.documentElement.requestFullscreen !== "function") {
+    hud.showNotification(
+      "Este navegador não permite tela cheia nesta página.",
+      "warning",
+      5000,
+    );
+    return;
+  }
+
+  try {
+    await document.documentElement.requestFullscreen({
+      navigationUI: "hide",
+    });
+  } catch (error) {
+    console.warn("Não foi possível entrar em tela cheia.", error);
+    hud.showNotification(
+      error instanceof DOMException && error.name === "NotAllowedError"
+        ? "O navegador bloqueou a tela cheia. Toque novamente para tentar."
+        : "Não foi possível entrar em tela cheia neste navegador.",
+      "warning",
+      5000,
+    );
+  }
+}
+
 const network = new NetworkClient({
   onState: (state) => {
     game.setRoomState(state);
@@ -275,6 +312,9 @@ hud = new Hud(app, {
     sound.setEnabled(enabled);
     savePreferences(preferences);
     if (enabled) sound.play("join");
+  },
+  onToggleFullscreen: () => {
+    void toggleFullscreen();
   },
   onReady: (ready) => {
     network.setReady(ready);

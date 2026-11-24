@@ -34,7 +34,8 @@ Vite, Express e Socket.IO. A interface e as mensagens estão em português.
 - Cristais ativados com `E`: corrida turbo, pulo alto, invisibilidade, bola de
   neve, rapel/gancho, onda de choque, granada de tinta, inversor de gravidade e
   troca de corpo. O servidor valida coleta, duração, colisões e efeitos.
-- Controles de teclado e joystick para toque, botão mobile de slide, feedback
+- Controles de teclado e joystick para toque, corrida mobile em modo liga/desliga,
+  grupo de ações no lado direito e botão mobile de slide, com feedback
   visual/sonoro e layout adaptável. O cliente classifica o dispositivo como
   celular, tablet ou computador usando dicas do navegador, toque, user-agent e
   dimensões da tela. Em celulares, durante a contagem regressiva e a partida,

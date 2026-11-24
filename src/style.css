@@ -3451,8 +3451,34 @@ kbd {
   }
 
   html[data-device-type="phone"] .touch-action-group {
-    gap: 5px;
-    margin-bottom: 2px;
+    display: grid;
+    grid-template-columns: repeat(3, 50px);
+    grid-template-rows: repeat(2, 50px);
+    grid-template-areas:
+      ". jump dash"
+      "slide sprint power";
+    gap: 4px;
+    margin: 0 2px 0 0;
+  }
+
+  html[data-device-type="phone"] .jump-button {
+    grid-area: jump;
+  }
+
+  html[data-device-type="phone"] .dash-button {
+    grid-area: dash;
+  }
+
+  html[data-device-type="phone"] .slide-button {
+    grid-area: slide;
+  }
+
+  html[data-device-type="phone"] .sprint-button {
+    grid-area: sprint;
+  }
+
+  html[data-device-type="phone"] .power-button {
+    grid-area: power;
   }
 }
 
@@ -3487,8 +3513,34 @@ kbd {
   }
 
   .touch-action-group {
+    display: grid;
+    grid-template-columns: repeat(3, 50px);
+    grid-template-rows: repeat(2, 50px);
+    grid-template-areas:
+      ". jump dash"
+      "slide sprint power";
     gap: 5px;
     margin-bottom: 2px;
+  }
+
+  .jump-button {
+    grid-area: jump;
+  }
+
+  .dash-button {
+    grid-area: dash;
+  }
+
+  .slide-button {
+    grid-area: slide;
+  }
+
+  .sprint-button {
+    grid-area: sprint;
+  }
+
+  .power-button {
+    grid-area: power;
   }
 }
 

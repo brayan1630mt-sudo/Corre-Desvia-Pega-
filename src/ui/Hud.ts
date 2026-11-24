@@ -85,7 +85,7 @@ export class Hud {
             <button class="jump-button" data-action="jump" type="button" aria-label="Pular">PULAR<span>↑</span></button>
             <button class="slide-button" data-action="slide" type="button" aria-label="Deslizar">SLIDE<span>C</span></button>
             <button class="power-button" data-action="power" type="button" aria-label="Usar poder (E)" disabled><span data-power-action>PODER</span><span>E</span></button>
-            <button class="sprint-button" data-action="sprint">CORRER<span>↗</span></button>
+            <button class="sprint-button" data-action="sprint" type="button" aria-label="Ativar corrida" aria-pressed="false">CORRER<span>↗</span></button>
           </div>
         </div>
         <div class="toast-stack" id="toast-stack" aria-live="polite"></div>

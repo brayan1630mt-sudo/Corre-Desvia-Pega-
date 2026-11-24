@@ -124,6 +124,15 @@ const network = new NetworkClient({
     const localPlayer = state.players.find(
       (player) => player.id === localPlayerId,
     );
+    if (state.phase !== "playing" || localPlayer?.isEliminated) {
+      game.input.setSprint(false);
+      const sprintButton = hud.getSprintButton();
+      sprintButton.setAttribute("aria-pressed", "false");
+      sprintButton.setAttribute("aria-label", "Ativar corrida");
+      sprintButton.classList.remove("is-sprinting");
+      const sprintIcon = sprintButton.querySelector("span");
+      if (sprintIcon) sprintIcon.textContent = "↗";
+    }
     if (localPlayer?.isIt && localPlayer.taggerPenaltyEndsAt > 0) {
       const secondsLeft = Math.ceil(
         Math.max(0, localPlayer.taggerPenaltyEndsAt - Date.now()) / 1000,
@@ -287,20 +296,18 @@ const game = new Game({
 });
 
 const sprintButton = hud.getSprintButton();
-sprintButton.addEventListener("pointerdown", (event) => {
-  event.preventDefault();
-  game.input.setSprint(true);
-  sprintButton.setPointerCapture(event.pointerId);
-  sprintButton.classList.add("is-sprinting");
+sprintButton.addEventListener("click", () => {
+  const enabled = sprintButton.getAttribute("aria-pressed") !== "true";
+  game.input.setSprint(enabled);
+  sprintButton.setAttribute("aria-pressed", String(enabled));
+  sprintButton.setAttribute(
+    "aria-label",
+    enabled ? "Desativar corrida" : "Ativar corrida",
+  );
+  sprintButton.classList.toggle("is-sprinting", enabled);
+  const sprintIcon = sprintButton.querySelector("span");
+  if (sprintIcon) sprintIcon.textContent = enabled ? "✓" : "↗";
 });
-const stopSprint = (): void => {
-  game.input.setSprint(false);
-  sprintButton.classList.remove("is-sprinting");
-};
-sprintButton.addEventListener("pointerup", stopSprint);
-sprintButton.addEventListener("pointercancel", stopSprint);
-sprintButton.addEventListener("lostpointercapture", stopSprint);
-sprintButton.addEventListener("pointerleave", stopSprint);
 
 const jumpButton = hud.getJumpButton();
 jumpButton.addEventListener("pointerdown", (event) => {

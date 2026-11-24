@@ -78,6 +78,8 @@ export interface PlayerState {
   grappleAnchor: Vector3 | null;
   dashCooldownEndsAt: number;
   survivalPoints: number;
+  lives: number;
+  spawnProtectedUntil: number;
   taggerPenaltyEndsAt: number;
   isEliminated: boolean;
   isSliding: boolean;

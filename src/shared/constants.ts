@@ -46,11 +46,11 @@ export const ROUND = {
   countdownSeconds: 4,
   tagDistance: 1.75,
   tagCooldownMs: 1800,
-  respawnInvulnerabilityMs: 1800,
+  respawnInvulnerabilityMs: 3000,
+  livesPerPlayer: 2,
   maximumPlayers: 12,
   minimumPlayers: 2,
-  taggerPenaltySeconds: 25,
-  tagTransferGraceMs: 3000,
+  taggerPenaltySeconds: 30,
 } as const;
 
 export const NETWORK = {

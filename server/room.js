@@ -60,6 +60,7 @@ const GRAVITY_MULTIPLIER = 0.32;
 const SWAP_MAX_RANGE = 28;
 const SLIDE_PLAYER_RADIUS = 0.48;
 const PLAYER_EYE_HEIGHT = 1.57;
+const RAMP_SUPPORT_TOLERANCE = 0.18;
 const FIRST_TAGGER_HINT_DELAY_MS = 8000;
 const TAGGER_HINT_INTERVAL_MS = 12000;
 const INPUT_STALE_MS = 260;
@@ -153,9 +154,21 @@ function platformAtPlayerHeight(player) {
   );
 }
 
-function supportHeightAt(x, z) {
+function supportHeightAt(x, z, playerY = 0) {
   const rampHeight = rampHeightAt(x, z);
-  return rampHeight === null ? 0 : rampHeight;
+  return rampHeight === null || playerY < rampHeight - RAMP_SUPPORT_TOLERANCE
+    ? 0
+    : rampHeight;
+}
+
+function rampLandedOn(player, previousY, nextY) {
+  if (player.verticalVelocity >= 0) {
+    return null;
+  }
+  const rampHeight = rampHeightAt(player.x, player.z);
+  return rampHeight !== null && previousY >= rampHeight && nextY <= rampHeight
+    ? rampHeight
+    : null;
 }
 
 function findWallRunSide(player) {
@@ -282,6 +295,8 @@ function playerSnapshot(player, now = Date.now()) {
       : null,
     dashCooldownEndsAt: player.dashCooldownEndsAt,
     survivalPoints: player.survivalPoints,
+    lives: player.lives,
+    spawnProtectedUntil: player.spawnProtectedUntil,
     taggerPenaltyEndsAt: player.isIt ? player.taggerPenaltyEndsAt : 0,
     isEliminated: player.isEliminated,
     isSliding: player.isSliding,
@@ -383,6 +398,8 @@ export class GameRoom {
       input: normalizePlayerInput(null),
       inputUpdatedAt: this.clock(),
       isIt: false,
+      lives: ROUND.livesPerPlayer,
+      spawnProtectedUntil: 0,
       isMoving: false,
       isSprinting: false,
       isDashing: false,
@@ -507,6 +524,8 @@ export class GameRoom {
       player.survivalProgressMs = 0;
       player.isIt = false;
       player.isEliminated = false;
+      player.lives = ROUND.livesPerPlayer;
+      player.spawnProtectedUntil = 0;
       player.taggerPenaltyEndsAt = 0;
       player.isReady = false;
       player.input = normalizePlayerInput(null);
@@ -617,6 +636,10 @@ export class GameRoom {
     selected.taggerPenaltyEndsAt =
       now + ROUND.taggerPenaltySeconds * 1000;
     this.itPlayerId = selected.id;
+    for (const player of this.players.values()) {
+      player.spawnProtectedUntil =
+        now + ROUND.respawnInvulnerabilityMs;
+    }
     this.phase = "playing";
     this.roundEndsAt = now + ROUND.durationSeconds * 1000;
     this.lastTagAt = now;
@@ -688,7 +711,7 @@ export class GameRoom {
       }
       const onPlatform = platformAtPlayerHeight(player);
       const currentSupport = Math.max(
-        supportHeightAt(player.x, player.z),
+        supportHeightAt(player.x, player.z, player.y),
         onPlatform?.height ?? 0,
       );
       const grounded =
@@ -788,10 +811,11 @@ export class GameRoom {
         horizontalVelocityZ = (-input.forward / Math.max(1, inputLength)) * speed;
       }
       if (player.isSliding) {
-        const rampNow = rampHeightAt(player.x, player.z);
-        const rampAhead = rampHeightAt(
+        const rampNow = supportHeightAt(player.x, player.z, player.y);
+        const rampAhead = supportHeightAt(
           player.x + horizontalVelocityX * 0.08,
           player.z + horizontalVelocityZ * 0.08,
+          player.y,
         );
         if (rampNow !== null && rampAhead !== null && rampAhead < rampNow) {
           horizontalVelocityX *= 1.22;
@@ -908,7 +932,7 @@ export class GameRoom {
           Math.sin(progress * Math.PI) * player.vaultHeight;
         player.verticalVelocity = 0;
       } else if (player.verticalVelocity <= 0) {
-        const rampSupport = supportHeightAt(player.x, player.z);
+        const rampSupport = supportHeightAt(player.x, player.z, player.y);
         const platformSupport = ALL_CLIMBABLE_PLATFORMS.find(
           (platform) =>
             circleIntersectsRectangle(
@@ -939,6 +963,17 @@ export class GameRoom {
           0,
           player.y + player.verticalVelocity * deltaSeconds,
         );
+        const rampCeiling = rampHeightAt(player.x, player.z);
+        if (
+          rampCeiling !== null &&
+          player.verticalVelocity > 0 &&
+          previousY + ARENA.playerHeight < rampCeiling &&
+          nextY + ARENA.playerHeight >= rampCeiling
+        ) {
+          player.y = rampCeiling - ARENA.playerHeight;
+          player.verticalVelocity = 0;
+          continue;
+        }
         const ceiling = ALL_CLIMBABLE_PLATFORMS.find(
           (platform) =>
             platform.kind === "deck" &&
@@ -963,9 +998,13 @@ export class GameRoom {
           player.verticalVelocity = 0;
           continue;
         }
-        const landing = platformLandedOn(player, previousY, nextY);
-        if (landing) {
-          player.y = landing.height;
+        const rampLanding = rampLandedOn(player, previousY, nextY);
+        const platformLanding = platformLandedOn(player, previousY, nextY);
+        if (rampLanding !== null) {
+          player.y = rampLanding;
+          player.verticalVelocity = 0;
+        } else if (platformLanding) {
+          player.y = platformLanding.height;
           player.verticalVelocity = 0;
         } else {
           player.y = nextY;
@@ -1605,12 +1644,21 @@ export class GameRoom {
       return;
     }
     const chaser = this.players.get(this.itPlayerId ?? "");
-    if (!chaser || chaser.isEliminated || chaser.frozenUntil > now) {
+    if (
+      !chaser ||
+      chaser.isEliminated ||
+      chaser.frozenUntil > now ||
+      chaser.spawnProtectedUntil > now
+    ) {
       return;
     }
     const tagDistanceSquared = ROUND.tagDistance ** 2;
     for (const target of this.players.values()) {
-      if (target.id === chaser.id || target.isEliminated) {
+      if (
+        target.id === chaser.id ||
+        target.isEliminated ||
+        target.spawnProtectedUntil > now
+      ) {
         continue;
       }
       const dx = chaser.x - target.x;
@@ -1626,13 +1674,10 @@ export class GameRoom {
         continue;
       }
 
-      const inheritedPenaltyEndsAt = chaser.taggerPenaltyEndsAt;
       chaser.isIt = false;
       chaser.taggerPenaltyEndsAt = 0;
       target.isIt = true;
-      target.taggerPenaltyEndsAt =
-        Math.max(now, inheritedPenaltyEndsAt) +
-        ROUND.tagTransferGraceMs;
+      target.taggerPenaltyEndsAt = now + ROUND.taggerPenaltySeconds * 1000;
       this.itPlayerId = target.id;
       this.lastTagAt = now;
       this.nextHintAt = now + TAGGER_HINT_INTERVAL_MS;
@@ -1660,20 +1705,69 @@ export class GameRoom {
       return;
     }
 
+    tagger.lives = Math.max(0, tagger.lives - 1);
     tagger.isIt = false;
-    tagger.isEliminated = true;
-    tagger.isMoving = false;
-    tagger.isSprinting = false;
-    tagger.isDashing = false;
-    tagger.isSliding = false;
-    tagger.isWallRunning = false;
-    tagger.isVaulting = false;
-    tagger.input = normalizePlayerInput(null);
-    tagger.grapple = null;
-    tagger.powerUp = null;
-    tagger.powerUpExpiresAt = 0;
+    tagger.taggerPenaltyEndsAt = 0;
+    if (tagger.lives > 0) {
+      const spawn = randomSpawn(
+        this.random,
+        [...this.players.values()].filter(
+          (player) => player.id !== tagger.id && !player.isEliminated,
+        ),
+      );
+      tagger.x = spawn.x;
+      tagger.y = 0;
+      tagger.z = spawn.z;
+      tagger.spawnProtectedUntil =
+        now + ROUND.respawnInvulnerabilityMs;
+      tagger.verticalVelocity = 0;
+      tagger.velocityX = 0;
+      tagger.velocityZ = 0;
+      tagger.knockbackX = 0;
+      tagger.knockbackZ = 0;
+      tagger.input = normalizePlayerInput(null);
+      tagger.inputUpdatedAt = now;
+      tagger.jumpRequested = false;
+      tagger.dashRequested = false;
+      tagger.slideRequested = false;
+      tagger.dashEndsAt = 0;
+      tagger.dashCooldownEndsAt = 0;
+      tagger.isMoving = false;
+      tagger.isSprinting = false;
+      tagger.isDashing = false;
+      tagger.isSliding = false;
+      tagger.slideEndsAt = 0;
+      tagger.isWallRunning = false;
+      tagger.wallRunSide = 0;
+      tagger.isVaulting = false;
+      tagger.slipstreamTargetId = null;
+      tagger.slipstreamStartedAt = 0;
+      tagger.isSlipstreaming = false;
+      tagger.grapple = null;
+      tagger.powerUp = null;
+      tagger.powerUpExpiresAt = 0;
+      tagger.frozenUntil = 0;
+      tagger.inkedUntil = 0;
+      tagger.gravityInvertedUntil = 0;
+      this.addMessage(
+        `${tagger.name} perdeu uma vida e voltou protegido!`,
+        "info",
+      );
+    } else {
+      tagger.isEliminated = true;
+      tagger.isMoving = false;
+      tagger.isSprinting = false;
+      tagger.isDashing = false;
+      tagger.isSliding = false;
+      tagger.isWallRunning = false;
+      tagger.isVaulting = false;
+      tagger.input = normalizePlayerInput(null);
+      tagger.grapple = null;
+      tagger.powerUp = null;
+      tagger.powerUpExpiresAt = 0;
+      this.addMessage(`${tagger.name} explodiu e virou espectador!`, "info");
+    }
     this.itPlayerId = null;
-    this.addMessage(`${tagger.name} explodiu e virou espectador!`, "info");
 
     const remaining = [...this.players.values()].filter(
       (player) => !player.isEliminated,
@@ -1682,7 +1776,9 @@ export class GameRoom {
       this.finishRound(remaining[0]?.id ?? null);
       return;
     }
-    const selected = remaining[Math.floor(this.random() * remaining.length)];
+    const candidates = remaining.filter((player) => player.id !== tagger.id);
+    const eligible = candidates.length > 0 ? candidates : remaining;
+    const selected = eligible[Math.floor(this.random() * eligible.length)];
     if (!selected) {
       this.finishRound(null);
       return;

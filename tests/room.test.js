@@ -335,6 +335,57 @@ test("the three arena levels are connected by server-shared ramps", () => {
   }
 });
 
+test("walking underneath a ramp does not raise the player", () => {
+  let now = 1000;
+  const room = new GameRoom("UNDER", { random: () => 0, clock: () => now });
+  room.addPlayer("one", "Um");
+  room.addPlayer("two", "Dois");
+  room.startGame("one");
+  now += 4500;
+  room.tick(now);
+
+  const player = room.players.get("one");
+  const ramp = ARENA_RAMPS.find((candidate) => candidate.id === "lower-north");
+  assert.ok(ramp);
+  player.x = ramp.x;
+  player.z = 0;
+  player.y = 0;
+  player.verticalVelocity = 0;
+  for (let step = 0; step < 8; step += 1) {
+    room.setInput("one", { right: 1 });
+    now += 50;
+    room.tick(now);
+  }
+
+  assert.equal(player.y, 0);
+});
+
+test("moving onto a ramp from its low end follows the ramp surface", () => {
+  let now = 1000;
+  const room = new GameRoom("RAMP", { random: () => 0, clock: () => now });
+  room.addPlayer("one", "Um");
+  room.addPlayer("two", "Dois");
+  room.startGame("one");
+  now += 4500;
+  room.tick(now);
+
+  const player = room.players.get("one");
+  const ramp = ARENA_RAMPS.find((candidate) => candidate.id === "lower-north");
+  assert.ok(ramp);
+  player.x = ramp.x;
+  player.z = 10;
+  player.y = 0;
+  player.verticalVelocity = 0;
+  for (let step = 0; step < 8; step += 1) {
+    room.setInput("one", { forward: 1 });
+    now += 50;
+    room.tick(now);
+  }
+
+  assert.ok(player.y > 0.3);
+  assert.ok(Math.abs(player.y - rampHeightAt(player.x, player.z)) < 0.02);
+});
+
 test("climbable platforms block ground movement but allow movement at their top", () => {
   const platform = CLIMBABLE_PLATFORMS[0];
   const start = {
@@ -426,7 +477,7 @@ test("awards survival points only while a player is not being chased", () => {
 
   survivor.x = tagger.x;
   survivor.z = tagger.z;
-  now += 1800;
+  now += ROUND.respawnInvulnerabilityMs;
   room.checkForTag(now);
   assert.equal(survivor.isIt, true);
   const caughtPlayerPoints = survivor.survivalPoints;
@@ -929,7 +980,7 @@ test("tags nearby players and announces the new tagger", () => {
   const target = [...room.players.values()].find((player) => !player.isIt);
   target.x = tagger.x;
   target.z = tagger.z;
-  now += 2000;
+  now += ROUND.respawnInvulnerabilityMs;
   room.tick(now);
   assert.equal(room.itPlayerId, target.id);
   assert.equal(target.isIt, true);
@@ -937,7 +988,7 @@ test("tags nearby players and announces the new tagger", () => {
   assert.ok(events.some((event) => event.name === "game:tag"));
 });
 
-test("the tag penalty transfers with only three seconds of extra time", () => {
+test("tagging another player resets the tag penalty to thirty seconds", () => {
   let now = 1000;
   const room = new GameRoom("HOT1", { random: () => 0, clock: () => now });
   room.addPlayer("one", "Um");
@@ -954,18 +1005,14 @@ test("the tag penalty transfers with only three seconds of extra time", () => {
   );
   tagger.x = target.x = 0;
   tagger.z = target.z = 0;
-  const inheritedDeadline = tagger.taggerPenaltyEndsAt;
-
-  now += ROUND.tagCooldownMs;
+  now += ROUND.respawnInvulnerabilityMs;
   room.checkForTag(now);
   assert.equal(room.itPlayerId, target.id);
-  assert.equal(
-    target.taggerPenaltyEndsAt,
-    inheritedDeadline + ROUND.tagTransferGraceMs,
-  );
+  assert.equal(target.taggerPenaltyEndsAt, now + 30_000);
+  assert.equal(tagger.taggerPenaltyEndsAt, 0);
 });
 
-test("a tagger timeout eliminates them and chooses a new tagger", () => {
+test("a tagger timeout consumes one life, respawns protected, and chooses another tagger", () => {
   let now = 1000;
   const room = new GameRoom("HOT2", { random: () => 0, clock: () => now });
   room.addPlayer("one", "Um");
@@ -978,15 +1025,27 @@ test("a tagger timeout eliminates them and chooses a new tagger", () => {
   const deadline = expiredTagger.taggerPenaltyEndsAt;
 
   room.checkTaggerPenalty(deadline);
-  assert.equal(expiredTagger.isEliminated, true);
+  assert.equal(expiredTagger.lives, 1);
+  assert.equal(expiredTagger.isEliminated, false);
+  assert.equal(
+    expiredTagger.spawnProtectedUntil,
+    deadline + ROUND.respawnInvulnerabilityMs,
+  );
+  assert.ok(
+    expiredTagger.x !== room.players.get("two").x ||
+      expiredTagger.z !== room.players.get("two").z,
+  );
   assert.equal(room.itPlayerId, "two");
   assert.equal(room.players.get("two").isIt, true);
   assert.equal(
     room.players.get("two").taggerPenaltyEndsAt,
     deadline + ROUND.taggerPenaltySeconds * 1000,
   );
-  assert.equal(room.setInput("one", { forward: 1 }), false);
-  assert.equal(room.getState(deadline).players.find((player) => player.id === "one").isEliminated, true);
+  assert.equal(room.setInput("one", { forward: 1 }), true);
+  assert.equal(
+    room.getState(deadline).players.find((player) => player.id === "one").lives,
+    1,
+  );
 });
 
 test("a timeout with one fugitive ends the round and leaves the winner active", () => {
@@ -998,10 +1057,48 @@ test("a timeout with one fugitive ends the round and leaves the winner active", 
   now += 4500;
   room.tick(now);
   const tagger = room.players.get("one");
+  tagger.lives = 1;
   room.checkTaggerPenalty(tagger.taggerPenaltyEndsAt);
   assert.equal(room.phase, "finished");
   assert.equal(room.winnerId, "two");
   assert.equal(tagger.isEliminated, true);
+});
+
+test("spawn protection prevents tagging and every round starts with two lives", () => {
+  let now = 1000;
+  const room = new GameRoom("SPAWN", { random: () => 0, clock: () => now });
+  room.addPlayer("one", "Um");
+  room.addPlayer("two", "Dois");
+  room.startGame("one");
+  assert.ok([...room.players.values()].every((player) => player.lives === 2));
+  now += 4500;
+  room.tick(now);
+  const tagger = room.players.get("one");
+  const target = room.players.get("two");
+  tagger.x = target.x = 0;
+  tagger.z = target.z = 0;
+
+  now += ROUND.tagCooldownMs;
+  room.checkForTag(now);
+  assert.equal(room.itPlayerId, tagger.id);
+
+  target.spawnProtectedUntil = 0;
+  room.checkForTag(now);
+  assert.equal(room.itPlayerId, tagger.id);
+
+  tagger.spawnProtectedUntil = 0;
+  target.spawnProtectedUntil = now + 1000;
+  room.checkForTag(now);
+  assert.equal(room.itPlayerId, tagger.id);
+
+  now = target.spawnProtectedUntil;
+  room.checkForTag(now);
+  assert.equal(room.itPlayerId, target.id);
+  const targetSnapshot = room.getState(now).players.find(
+    (player) => player.id === target.id,
+  );
+  assert.equal(targetSnapshot.lives, ROUND.livesPerPlayer);
+  assert.equal(targetSnapshot.spawnProtectedUntil, target.spawnProtectedUntil);
 });
 
 test("shockwave knocks back opponents without transferring the tag", () => {

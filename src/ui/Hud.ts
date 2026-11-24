@@ -3,6 +3,7 @@ import {
   PLAYER_COLORS,
   POWER_UP_COLORS,
   POWER_UP_LABELS,
+  ROUND,
 } from "../shared/constants.ts";
 import { formatTime } from "../shared/math.ts";
 import type {
@@ -62,6 +63,13 @@ export class Hud {
   private connected = false;
   private lastPhase = "";
   private bound = false;
+  private readonly isPhone =
+    document.documentElement.dataset.deviceType === "phone";
+  private readonly portraitQuery = window.matchMedia("(orientation: portrait)");
+  private isGameplayPhase = false;
+  private readonly handleOrientationChange = (): void => {
+    this.updateOrientationPrompt();
+  };
 
   constructor(root: HTMLElement, callbacks: LobbyActionCallbacks) {
     this.root = root;
@@ -82,9 +90,23 @@ export class Hud {
         </div>
         <div class="toast-stack" id="toast-stack" aria-live="polite"></div>
       </div>
+      <div class="phone-rotate-overlay" id="phone-rotate-overlay" role="status" aria-live="assertive" hidden>
+        <div class="phone-rotate-card">
+          <svg class="phone-rotate-icon" viewBox="0 0 64 64" fill="none" aria-hidden="true">
+            <rect x="21" y="12" width="22" height="40" rx="4" stroke="currentColor" stroke-width="3"/>
+            <path d="M29 18h6M30 46h4M48 22a21 21 0 0 1 4 25M51 47l1 5 5-2M16 42a21 21 0 0 1-4-25M13 17l-1-5-5 2" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          <strong>Gire o celular</strong>
+          <span>Jogue com o aparelho na horizontal.</span>
+        </div>
+      </div>
     `;
     this.screen = this.requireElement("#screen");
     this.toastStack = this.requireElement("#toast-stack");
+    this.portraitQuery.addEventListener(
+      "change",
+      this.handleOrientationChange,
+    );
     this.bind();
     this.renderHome();
   }
@@ -142,6 +164,9 @@ export class Hud {
       );
     this.currentState = state;
     this.localPlayerId = localPlayerId;
+      this.isGameplayPhase =
+        state.phase === "countdown" || state.phase === "playing";
+      this.updateOrientationPrompt();
     const nextScreen = this.screenForPhase(state.phase);
     if (nextScreen !== this.currentScreen || state.phase !== this.lastPhase) {
       this.lastPhase = state.phase;
@@ -200,6 +225,8 @@ export class Hud {
     this.currentState = null;
     this.currentScreen = "home";
     this.lastPhase = "";
+    this.isGameplayPhase = false;
+    this.updateOrientationPrompt();
     this.feed = [];
     const touchControls = this.root.querySelector<HTMLElement>("#touch-controls");
     if (touchControls) touchControls.hidden = true;
@@ -606,11 +633,11 @@ export class Hud {
       <main class="live-layout">
         <div class="live-status-row">
           <div class="tag-status" data-tag-status aria-label="Quem está pegando">
-            <span class="tag-status-icon">✳</span><span class="tag-copy"><small>QUEM ESTÁ PEGANDO</small><strong data-tag-name>—</strong></span>
+            <span class="tag-status-icon">✳</span><span class="tag-copy"><small>QUEM ESTÁ PEGANDO</small><strong data-tag-name>—</strong><small class="lives-readout" data-lives-readout>VIDAS 2/2</small></span>
           </div>
           <div class="power-status" data-power-status><small>PODER</small><strong data-power-name>Sem poder</strong></div>
           <div class="timer-card" data-timer-card aria-label="Tempo da rodada"><span class="timer-label">TEMPO</span><strong data-timer>03:00</strong><small>RODADA <span data-round-number>01</span></small></div>
-          <div class="tagger-timer" data-tagger-timer hidden><small data-tagger-timer-label>TEMPO DO PEGADOR</small><strong data-tagger-timer-value>00:25</strong></div>
+          <div class="tagger-timer" data-tagger-timer hidden><small data-tagger-timer-label>TEMPO DO PEGADOR</small><strong data-tagger-timer-value>00:30</strong></div>
         </div>
         <button class="players-toggle" data-action="toggle-players" type="button" aria-expanded="false" aria-controls="players-panel" aria-label="Mostrar jogadores e eventos" title="Jogadores e eventos">
           ${icon("users")}<span data-player-total>0</span>
@@ -714,6 +741,19 @@ export class Hud {
     const localPlayer = state.players.find(
       (player) => player.id === this.localPlayerId,
     );
+    const livesReadout = this.root.querySelector<HTMLElement>(
+      "[data-lives-readout]",
+    );
+    if (livesReadout && localPlayer) {
+      const protectionSeconds = Math.max(
+        0,
+        Math.ceil((localPlayer.spawnProtectedUntil - Date.now()) / 1000),
+      );
+      livesReadout.textContent =
+        `VIDAS ${localPlayer.lives}/${ROUND.livesPerPlayer}` +
+        (protectionSeconds > 0 ? ` · ESCUDO ${protectionSeconds}s` : "");
+      livesReadout.classList.toggle("is-protected", protectionSeconds > 0);
+    }
     const taggerTimer = this.root.querySelector<HTMLElement>(
       "[data-tagger-timer]",
     );
@@ -888,6 +928,18 @@ export class Hud {
         `<div class="lobby-player lobby-player-empty" style="--slot:${index}"><span class="empty-avatar">+</span><span>esperando</span></div>`,
     ).join("");
     grid.innerHTML = playerCards + emptySlots;
+  }
+
+  private updateOrientationPrompt(): void {
+    const overlay = this.root.querySelector<HTMLElement>(
+      "#phone-rotate-overlay",
+    );
+    if (overlay) {
+      overlay.hidden =
+        !this.isPhone ||
+        !this.isGameplayPhase ||
+        !this.portraitQuery.matches;
+    }
   }
 
   private renderLivePlayers(): void {

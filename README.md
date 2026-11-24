@@ -26,15 +26,21 @@ Vite, Express e Socket.IO. A interface e as mensagens estão em português.
   vault sobre barreiras baixas.
 - Slipstream: correr atrás de outra pessoa por 1 segundo concede +15% de
   velocidade enquanto a perseguição continuar.
-- Regra “batata quente”: o pegador tem 25 segundos; ao passar a vez, o novo
-  pegador herda o cronômetro com apenas 3 segundos extras. Se o tempo acabar,
-  o pegador é eliminado e vira espectador; o servidor escolhe outro. Se restar
-  apenas uma pessoa, ela vence a rodada.
+- Regra “batata quente”: o pegador tem 30 segundos, reiniciados quando pega
+  alguém. Cada jogador tem duas vidas; ao zerar o cronômetro, perde uma vida e,
+  se ainda tiver outra, reaparece protegido por 3 segundos. Sem vidas, vira
+  espectador e o servidor escolhe outro pegador. A proteção também vale no
+  início da rodada; jogadores protegidos não podem pegar nem ser pegos.
 - Cristais ativados com `E`: corrida turbo, pulo alto, invisibilidade, bola de
   neve, rapel/gancho, onda de choque, granada de tinta, inversor de gravidade e
   troca de corpo. O servidor valida coleta, duração, colisões e efeitos.
 - Controles de teclado e joystick para toque, botão mobile de slide, feedback
-  visual/sonoro e layout adaptável.
+  visual/sonoro e layout adaptável. O cliente classifica o dispositivo como
+  celular, tablet ou computador usando dicas do navegador, toque, user-agent e
+  dimensões da tela. Em celulares, durante a contagem regressiva e a partida,
+  uma tela pede orientação horizontal se o aparelho estiver em pé; notebooks e
+  desktops não são bloqueados. O navegador não distingue notebook de desktop
+  com confiabilidade, então ambos são classificados como computador.
 - Trilha instrumental procedural em volume baixo, iniciada após o primeiro toque
   ou clique (restrição de autoplay do navegador) e silenciada junto dos efeitos.
 - Endpoint `/health` para monitoramento e Blueprint `render.yaml`.

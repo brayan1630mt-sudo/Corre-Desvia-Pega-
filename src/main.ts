@@ -63,6 +63,32 @@ function savePreferences(preferences: LobbyPreferences): void {
   }
 }
 
+type DeviceType = "phone" | "tablet" | "computer";
+
+function detectDeviceType(): DeviceType {
+  const navigatorWithHints = navigator as Navigator & {
+    userAgentData?: { mobile?: boolean };
+  };
+  const hasTouch =
+    navigator.maxTouchPoints > 0 ||
+    window.matchMedia("(pointer: coarse)").matches;
+  const phoneUserAgent =
+    /iPhone|iPod|Android.*Mobile|Windows Phone/i.test(navigator.userAgent);
+  const smallTouchScreen =
+    hasTouch && Math.min(screen.width, screen.height) <= 600;
+
+  if (
+    navigatorWithHints.userAgentData?.mobile === true ||
+    phoneUserAgent ||
+    smallTouchScreen
+  ) {
+    return "phone";
+  }
+  return hasTouch ? "tablet" : "computer";
+}
+
+document.documentElement.dataset.deviceType = detectDeviceType();
+
 function friendlyError(error: GameError): string {
   const messages: Record<GameError["code"], string> = {
     INVALID_NAME: "Escolha um apelido para continuar.",

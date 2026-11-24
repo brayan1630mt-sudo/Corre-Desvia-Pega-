@@ -1510,6 +1510,16 @@ kbd {
   gap: 4px;
 }
 
+.lives-readout {
+  color: #638a79 !important;
+  font-size: 7px !important;
+  letter-spacing: 0.35px !important;
+}
+
+.lives-readout.is-protected {
+  color: #3983a0 !important;
+}
+
 .tag-copy small,
 .timer-label,
 .timer-card > small {
@@ -2085,6 +2095,63 @@ kbd {
 
 .touch-controls[hidden] {
   display: none;
+}
+
+.phone-rotate-overlay {
+  position: fixed;
+  z-index: 100;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding:
+    calc(24px + env(safe-area-inset-top, 0px))
+    calc(24px + env(safe-area-inset-right, 0px))
+    calc(24px + env(safe-area-inset-bottom, 0px))
+    calc(24px + env(safe-area-inset-left, 0px));
+  background:
+    radial-gradient(circle at 50% 40%, rgba(84, 125, 111, 0.3), transparent 55%),
+    rgba(15, 25, 28, 0.97);
+  color: #f7f5ef;
+  text-align: center;
+}
+
+.phone-rotate-overlay[hidden] {
+  display: none;
+}
+
+.phone-rotate-card {
+  display: grid;
+  justify-items: center;
+  gap: 12px;
+}
+
+.phone-rotate-icon {
+  width: 76px;
+  height: 76px;
+  color: #8de0bd;
+  animation: rotate-phone-hint 2.4s ease-in-out infinite;
+}
+
+.phone-rotate-card strong {
+  font-family: var(--display);
+  font-size: clamp(25px, 7vw, 36px);
+}
+
+.phone-rotate-card span {
+  color: rgba(247, 245, 239, 0.72);
+  font-size: 14px;
+}
+
+@keyframes rotate-phone-hint {
+  0%,
+  100% {
+    transform: rotate(0);
+  }
+
+  45%,
+  70% {
+    transform: rotate(90deg);
+  }
 }
 
 .joystick,
@@ -3118,6 +3185,14 @@ kbd {
     display: none;
   }
 
+  .tag-copy .lives-readout {
+    display: block;
+    overflow: hidden;
+    font-size: 6px !important;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
   .tag-copy strong {
     max-width: 100%;
     overflow: hidden;
@@ -3225,9 +3300,9 @@ kbd {
   }
 
   .touch-controls {
-    right: 16px;
-    bottom: 20px;
-    left: 16px;
+    right: calc(16px + env(safe-area-inset-right, 0px));
+    bottom: calc(20px + env(safe-area-inset-bottom, 0px));
+    left: calc(16px + env(safe-area-inset-left, 0px));
     display: flex;
   }
 
@@ -3281,8 +3356,8 @@ kbd {
 
 @media (max-width: 380px) {
   .touch-controls {
-    right: 12px;
-    left: 12px;
+    right: calc(12px + env(safe-area-inset-right, 0px));
+    left: calc(12px + env(safe-area-inset-left, 0px));
   }
 
   .joystick {

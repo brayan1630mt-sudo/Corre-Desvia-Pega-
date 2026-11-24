@@ -71,7 +71,7 @@ function detectDeviceType(): DeviceType {
   };
   const hasTouch =
     navigator.maxTouchPoints > 0 ||
-    window.matchMedia("(pointer: coarse)").matches;
+    window.matchMedia("(pointer: coarse), (any-pointer: coarse)").matches;
   const phoneUserAgent =
     /iPhone|iPod|Android.*Mobile|Windows Phone/i.test(navigator.userAgent);
   const smallTouchScreen =

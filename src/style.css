@@ -2109,8 +2109,9 @@ kbd {
     calc(24px + env(safe-area-inset-bottom, 0px))
     calc(24px + env(safe-area-inset-left, 0px));
   background:
-    radial-gradient(circle at 50% 40%, rgba(84, 125, 111, 0.3), transparent 55%),
-    rgba(15, 25, 28, 0.97);
+    radial-gradient(circle at 50% 40%, rgba(84, 125, 111, 0.2), transparent 55%),
+    rgba(15, 25, 28, 0.48);
+  backdrop-filter: blur(2px);
   color: #f7f5ef;
   text-align: center;
 }
@@ -2123,6 +2124,11 @@ kbd {
   display: grid;
   justify-items: center;
   gap: 12px;
+  padding: 24px 28px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 22px;
+  background: rgba(15, 25, 28, 0.92);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.32);
 }
 
 .phone-rotate-icon {
@@ -3412,6 +3418,78 @@ kbd {
     min-width: 59px;
   }
 
+}
+
+@media (orientation: landscape) {
+  html[data-device-type="phone"] .touch-controls {
+    right: calc(12px + env(safe-area-inset-right, 0px));
+    bottom: calc(10px + env(safe-area-inset-bottom, 0px));
+    left: calc(12px + env(safe-area-inset-left, 0px));
+    display: flex;
+  }
+
+  html[data-device-type="phone"] .game-instructions {
+    display: none;
+  }
+
+  html[data-device-type="phone"] .joystick {
+    width: 92px;
+    height: 92px;
+  }
+
+  html[data-device-type="phone"] .sprint-button {
+    width: 58px;
+    height: 58px;
+  }
+
+  html[data-device-type="phone"] .dash-button,
+  html[data-device-type="phone"] .jump-button,
+  html[data-device-type="phone"] .slide-button,
+  html[data-device-type="phone"] .power-button {
+    width: 50px;
+    height: 50px;
+  }
+
+  html[data-device-type="phone"] .touch-action-group {
+    gap: 5px;
+    margin-bottom: 2px;
+  }
+}
+
+@media (orientation: landscape) and (max-height: 600px) and (any-pointer: coarse) {
+  .touch-controls {
+    right: calc(12px + env(safe-area-inset-right, 0px));
+    bottom: calc(10px + env(safe-area-inset-bottom, 0px));
+    left: calc(12px + env(safe-area-inset-left, 0px));
+    display: flex;
+  }
+
+  .game-instructions {
+    display: none;
+  }
+
+  .joystick {
+    width: 92px;
+    height: 92px;
+  }
+
+  .sprint-button {
+    width: 58px;
+    height: 58px;
+  }
+
+  .dash-button,
+  .jump-button,
+  .slide-button,
+  .power-button {
+    width: 50px;
+    height: 50px;
+  }
+
+  .touch-action-group {
+    gap: 5px;
+    margin-bottom: 2px;
+  }
 }
 
 @media (max-height: 760px) and (min-width: 601px) {

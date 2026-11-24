@@ -1,7 +1,7 @@
 import * as THREE from "three";
-import { ARENA, PALETTE } from "../shared/constants.ts";
+import { ARENA, PALETTE, PLAYER_MOVEMENT, PARKOUR } from "../shared/constants.ts";
 import { lerp, shortestAngle } from "../shared/math.ts";
-import type { PlayerSnapshot, PlayerState } from "../shared/types.ts";
+import type { PlayerInput, PlayerSnapshot, PlayerState } from "../shared/types.ts";
 
 const AVATAR_SCALE = 0.94;
 const FADE_DISTANCE = 70;
@@ -36,6 +36,11 @@ export class PlayerView {
   private sprinting = false;
   private dashing = false;
   private isIt = false;
+  private sliding = false;
+  private wallRunning = false;
+  private wallRunSide: -1 | 0 | 1 = 0;
+  private vaulting = false;
+  private eliminated = false;
   private disposed = false;
 
   constructor(player: PlayerState, scene: THREE.Scene) {
@@ -120,9 +125,15 @@ export class PlayerView {
     this.moving = player.isMoving;
     this.sprinting = player.isSprinting;
     this.dashing = player.isDashing;
+    this.sliding = player.isSliding;
+    this.wallRunning = player.isWallRunning;
+    this.wallRunSide = player.wallRunSide;
+    this.vaulting = player.isVaulting;
+    this.eliminated = player.isEliminated;
     this.setTagged(player.isIt);
     this.invisible = player.isInvisible;
-    this.group.visible = this.requestedVisible && !this.invisible;
+    this.group.visible =
+      this.requestedVisible && !this.invisible && !this.eliminated;
     this.freezeRing.visible = player.isFrozen;
     this.grappleAnchor = player.grappleAnchor
       ? new THREE.Vector3(
@@ -146,7 +157,7 @@ export class PlayerView {
     material.color.set(isIt ? PALETTE.coral : PALETTE.gold);
     material.opacity = isIt ? 0.96 : 0;
     material.transparent = true;
-    this.tagRing.visible = isIt;
+    this.tagRing.visible = isIt && !this.eliminated;
     const headMaterial = this.head.material as THREE.MeshStandardMaterial;
     headMaterial.color.set(
       isIt
@@ -176,6 +187,27 @@ export class PlayerView {
 
   getPosition(): THREE.Vector3 {
     return this.group.position;
+  }
+
+  predictMovement(
+    input: PlayerInput,
+    deltaSeconds: number,
+    isSliding: boolean,
+    isDashing: boolean,
+  ): void {
+    const length = Math.hypot(input.forward, input.right);
+    if (length <= 0.001) return;
+    const speed = isDashing
+      ? PLAYER_MOVEMENT.dashSpeed
+      : isSliding
+        ? PARKOUR.slideSpeed
+        : input.sprint
+          ? PLAYER_MOVEMENT.sprintSpeed
+          : PLAYER_MOVEMENT.walkSpeed;
+    this.target.x +=
+      (input.right / Math.max(1, length)) * speed * deltaSeconds;
+    this.target.z -=
+      (input.forward / Math.max(1, length)) * speed * deltaSeconds;
   }
 
   dispose(): void {
@@ -420,8 +452,18 @@ export class PlayerView {
         0.008 *
         (1 - this.gaitAmount) *
         (1 - this.jumpAmount);
-    this.body.rotation.x = -this.dashAmount * 0.16 + this.jumpAmount * 0.025;
-    this.body.rotation.z = stride * this.gaitAmount * 0.025;
+    const bodyHeight = this.sliding ? 0.62 : 0.94;
+    this.body.scale.y = lerp(this.body.scale.y, bodyHeight, smoothing);
+    this.body.rotation.x =
+      -this.dashAmount * 0.16 +
+      this.jumpAmount * 0.025 -
+      (this.vaulting ? 0.12 : 0);
+    const wallLean = this.wallRunning ? this.wallRunSide * 0.2 : 0;
+    this.body.rotation.z = lerp(
+      this.body.rotation.z,
+      wallLean + stride * this.gaitAmount * 0.025,
+      smoothing,
+    );
   }
 }
 

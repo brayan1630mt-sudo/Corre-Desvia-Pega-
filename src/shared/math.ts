@@ -1,7 +1,9 @@
 import {
+  ARENA_RAMPS,
   ARENA,
-  CLIMBABLE_PLATFORMS,
+  ALL_CLIMBABLE_PLATFORMS,
   OBSTACLES,
+  ELEVATED_PLATFORM_THICKNESS,
 } from "./constants.ts";
 import type { Vector2 } from "./types.ts";
 
@@ -80,6 +82,73 @@ export function circleIntersectsRectangle(
   return dx * dx + dz * dz <= radius * radius;
 }
 
+function pushCircleOutOfRectangle(
+  point: Vector2,
+  radius: number,
+  rectangle: { x: number; z: number; width: number; depth: number },
+): Vector2 {
+  const minX = rectangle.x - rectangle.width / 2;
+  const maxX = rectangle.x + rectangle.width / 2;
+  const minZ = rectangle.z - rectangle.depth / 2;
+  const maxZ = rectangle.z + rectangle.depth / 2;
+  const nearestX = clamp(point.x, minX, maxX);
+  const nearestZ = clamp(point.z, minZ, maxZ);
+  const dx = point.x - nearestX;
+  const dz = point.z - nearestZ;
+  const distanceSquared = dx * dx + dz * dz;
+  const isInside =
+    point.x >= minX &&
+    point.x <= maxX &&
+    point.z >= minZ &&
+    point.z <= maxZ;
+
+  if (!isInside && distanceSquared >= radius * radius) {
+    return point;
+  }
+  if (!isInside && distanceSquared > 0) {
+    const distance = Math.sqrt(distanceSquared);
+    const correction = (radius - distance) / distance;
+    return {
+      x: point.x + dx * correction,
+      z: point.z + dz * correction,
+    };
+  }
+
+  const exits = [
+    { distance: point.x - minX + radius, x: minX - radius, axis: "x" },
+    { distance: maxX - point.x + radius, x: maxX + radius, axis: "x" },
+    { distance: point.z - minZ + radius, z: minZ - radius, axis: "z" },
+    { distance: maxZ - point.z + radius, z: maxZ + radius, axis: "z" },
+  ];
+  const exit = exits.reduce((closest, candidate) =>
+    candidate.distance < closest.distance ? candidate : closest,
+  );
+  return exit.axis === "x"
+    ? { x: exit.x!, z: point.z }
+    : { x: point.x, z: exit.z! };
+}
+
+export function rampHeightAt(x: number, z: number): number | null {
+  for (const ramp of ARENA_RAMPS) {
+    const along = ramp.axis === "x" ? x : z;
+    const across = ramp.axis === "x" ? z : x;
+    const alongCenter = ramp.axis === "x" ? ramp.x : ramp.z;
+    const acrossCenter = ramp.axis === "x" ? ramp.z : ramp.x;
+    const alongLength = ramp.axis === "x" ? ramp.width : ramp.depth;
+    const acrossWidth = ramp.axis === "x" ? ramp.depth : ramp.width;
+    if (
+      Math.abs(across - acrossCenter) > acrossWidth / 2 ||
+      Math.abs(along - alongCenter) > alongLength / 2
+    ) {
+      continue;
+    }
+    const normalized = (along - (alongCenter - alongLength / 2)) / alongLength;
+    const progress = ramp.direction === 1 ? normalized : 1 - normalized;
+    return ramp.startY + (ramp.endY - ramp.startY) * progress;
+  }
+  return null;
+}
+
 export function resolveArenaPosition(
   start: Vector2,
   movement: Vector2,
@@ -99,60 +168,34 @@ export function resolveArenaPosition(
     ),
   };
 
-  for (const obstacle of OBSTACLES) {
-    if (playerY >= obstacle.collisionHeight - 0.02) {
-      continue;
+  for (let pass = 0; pass < 3; pass += 1) {
+    for (const obstacle of OBSTACLES) {
+      if (playerY >= obstacle.collisionHeight - 0.02) {
+        continue;
+      }
+      const resolved = pushCircleOutOfRectangle(next, radius, obstacle);
+      next.x = resolved.x;
+      next.z = resolved.z;
     }
 
-    const expanded = {
-      x: obstacle.x,
-      z: obstacle.z,
-      width: obstacle.width + radius * 2,
-      depth: obstacle.depth + radius * 2,
-    };
-    if (!circleIntersectsRectangle(next, 0, expanded)) {
-      continue;
-    }
-
-    const overlapX = expanded.width / 2 - Math.abs(next.x - obstacle.x);
-    const overlapZ = expanded.depth / 2 - Math.abs(next.z - obstacle.z);
-    if (overlapX < overlapZ) {
-      const direction = Math.sign(next.x - obstacle.x) || Math.sign(movement.x) || 1;
-      next.x = obstacle.x + direction * expanded.width / 2;
-    } else {
-      const direction = Math.sign(next.z - obstacle.z) || Math.sign(movement.z) || 1;
-      next.z = obstacle.z + direction * expanded.depth / 2;
-    }
-  }
-
-  for (const platform of CLIMBABLE_PLATFORMS) {
-    if (playerY >= platform.height - 0.02) {
-      continue;
-    }
-
-    const expanded = {
-      x: platform.x,
-      z: platform.z,
-      width: platform.width + radius * 2,
-      depth: platform.depth + radius * 2,
-    };
-    if (!circleIntersectsRectangle(next, 0, expanded)) {
-      continue;
-    }
-
-    const overlapX = expanded.width / 2 - Math.abs(next.x - platform.x);
-    const overlapZ = expanded.depth / 2 - Math.abs(next.z - platform.z);
-    if (overlapX < overlapZ) {
-      const direction =
-        Math.sign(next.x - platform.x) || Math.sign(movement.x) || 1;
-      next.x = platform.x + direction * expanded.width / 2;
-    } else {
-      const direction =
-        Math.sign(next.z - platform.z) || Math.sign(movement.z) || 1;
-      next.z = platform.z + direction * expanded.depth / 2;
+    for (const platform of ALL_CLIMBABLE_PLATFORMS) {
+      if (
+        platform.kind === "roof" ||
+        playerY >= platform.height - 0.02 ||
+        (platform.kind === "deck" &&
+          playerY + ARENA.playerHeight <=
+            platform.height - ELEVATED_PLATFORM_THICKNESS + 0.02)
+      ) {
+        continue;
+      }
+      const resolved = pushCircleOutOfRectangle(next, radius, platform);
+      next.x = resolved.x;
+      next.z = resolved.z;
     }
   }
 
+  next.x = clamp(next.x, -ARENA.halfWidth + radius, ARENA.halfWidth - radius);
+  next.z = clamp(next.z, -ARENA.halfDepth + radius, ARENA.halfDepth - radius);
   return next;
 }
 

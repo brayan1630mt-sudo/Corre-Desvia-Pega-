@@ -35,6 +35,7 @@ export class InputController {
   private sensitivity = 0.006;
   private enabled = false;
   private sprinting = false;
+  private sliding = false;
   private jumpRequested = false;
   private dashRequested = false;
   private powerRequested = false;
@@ -46,6 +47,7 @@ export class InputController {
     jump: false,
     dash: false,
     usePower: false,
+    slide: false,
     yaw: 0,
     pitch: 0,
   };
@@ -99,6 +101,10 @@ export class InputController {
     this.sprinting = enabled;
   }
 
+  setSlide(enabled: boolean): void {
+    this.sliding = enabled;
+  }
+
   requestJump(): void {
     if (this.enabled) {
       this.jumpRequested = true;
@@ -147,6 +153,8 @@ export class InputController {
       jump: this.jumpRequested,
       dash: this.dashRequested,
       usePower: this.powerRequested,
+      slide: this.sliding || this.keys.has("KeyC") ||
+        this.keys.has("ControlLeft") || this.keys.has("ControlRight"),
       yaw: this.yaw,
       pitch: this.pitch,
     };
@@ -198,6 +206,7 @@ export class InputController {
       next.jump !== this.input.jump ||
       next.dash !== this.input.dash ||
       next.usePower !== this.input.usePower ||
+      next.slide !== this.input.slide ||
       Math.abs(next.yaw - this.input.yaw) > 0.01 ||
       Math.abs(next.pitch - this.input.pitch) > 0.01
     );
@@ -213,7 +222,10 @@ export class InputController {
       event.code === "KeyQ" ||
       event.code === "KeyE" ||
       event.code === "ShiftLeft" ||
-      event.code === "ShiftRight"
+      event.code === "ShiftRight" ||
+      event.code === "KeyC" ||
+      event.code === "ControlLeft" ||
+      event.code === "ControlRight"
     ) {
       event.preventDefault();
     }
@@ -229,6 +241,13 @@ export class InputController {
     if (event.code === "ShiftLeft" || event.code === "ShiftRight") {
       this.sprinting = true;
     }
+    if (
+      event.code === "KeyC" ||
+      event.code === "ControlLeft" ||
+      event.code === "ControlRight"
+    ) {
+      this.keys.add(event.code);
+    }
     if (event.code in KEY_DIRECTIONS) {
       this.keys.add(event.code);
     }
@@ -239,11 +258,19 @@ export class InputController {
     if (event.code === "ShiftLeft" || event.code === "ShiftRight") {
       this.sprinting = false;
     }
+    if (
+      event.code === "KeyC" ||
+      event.code === "ControlLeft" ||
+      event.code === "ControlRight"
+    ) {
+      this.keys.delete(event.code);
+    }
   };
 
   private clearKeys = (): void => {
     this.keys.clear();
     this.sprinting = false;
+    this.sliding = false;
     this.jumpRequested = false;
     this.dashRequested = false;
     this.powerRequested = false;

@@ -11,19 +11,44 @@ Vite, Express e Socket.IO. A interface e as mensagens estão em português.
   rápida por salas abertas.
 - Partidas com até 12 pessoas, contagem regressiva, cronômetro, placar, feed de
   eventos e troca de pegador ao encostar.
+- O pegador recebe pistas privadas a cada 12 segundos com direção e faixa de
+  distância do jogador visível mais próximo; jogadores invisíveis não são revelados.
 - Servidor autoritativo: o servidor move os jogadores, limita a arena e valida
   colisões e tentativas de pegar.
 - Pulo com física e aterrissagem calculadas pelo servidor, disponível para
   escapar de tentativas de pega enquanto o jogador está no ar.
 - Dash rápido na direção do movimento ou da câmera, com recarga validada pelo
   servidor.
-- Cristais de energia surgem durante as rodadas: corrida turbo, pulo alto,
-  invisibilidade por alguns segundos, bola de neve de uso único que congela
-  outro jogador e rapel que puxa você na direção da mira.
-- Controles de teclado e joystick para toque, efeitos sonoros e layout adaptável.
+- Parkour vertical em três níveis conectados por rampas e passarelas mais
+  largas, com painéis e vigas. A colisão das bordas é circular e compartilhada
+  entre servidor e cliente; o espaço sob cada passarela respeita sua espessura.
+  Também há paredes paralelas para wall-run, slide com impulso em descidas e
+  vault sobre barreiras baixas.
+- Slipstream: correr atrás de outra pessoa por 1 segundo concede +15% de
+  velocidade enquanto a perseguição continuar.
+- Regra “batata quente”: o pegador tem 25 segundos; ao passar a vez, o novo
+  pegador herda o cronômetro com apenas 3 segundos extras. Se o tempo acabar,
+  o pegador é eliminado e vira espectador; o servidor escolhe outro. Se restar
+  apenas uma pessoa, ela vence a rodada.
+- Cristais ativados com `E`: corrida turbo, pulo alto, invisibilidade, bola de
+  neve, rapel/gancho, onda de choque, granada de tinta, inversor de gravidade e
+  troca de corpo. O servidor valida coleta, duração, colisões e efeitos.
+- Controles de teclado e joystick para toque, botão mobile de slide, feedback
+  visual/sonoro e layout adaptável.
 - Trilha instrumental procedural em volume baixo, iniciada após o primeiro toque
   ou clique (restrição de autoplay do navegador) e silenciada junto dos efeitos.
 - Endpoint `/health` para monitoramento e Blueprint `render.yaml`.
+
+## Planta técnica da arena
+
+A [planta 2D](./docs/arena-layout.svg) organiza os objetos em nove áreas, vistas
+de cima. O eixo `X` cresce para a direita; o eixo `Z` cresce para baixo, então
+o norte da arena é `-Z`. As passarelas e rampas usam cores diferentes para
+indicar os níveis de altura.
+
+As posições dos prédios e objetos escaláveis também estão agrupadas por área em
+`src/shared/constants.ts`. Esse arquivo continua sendo a referência numérica
+para colisões e modelos 3D; atualize a planta quando mover esses elementos.
 
 ## Requisitos
 
@@ -103,8 +128,9 @@ executável Git instalado.
 | Mover | `W`, `A`, `S`, `D` ou setas | Joystick na tela |
 | Pular | `Espaço` | Botão **Pular** |
 | Correr | `Shift` | Botão **Correr** |
+| Deslizar | `C` ou `Ctrl` | Botão **Slide** (segure enquanto corre) |
 | Dash | `Q` | Botão **Dash** |
-| Usar bola de neve ou rapel | `E` | Botão **Poder** |
+| Usar cristal/poder | `E` | Botão **Poder** |
 | Olhar ao redor | Arrastar o mouse na arena | Arrastar a tela |
 
 ## Configurações do servidor

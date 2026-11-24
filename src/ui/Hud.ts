@@ -75,6 +75,7 @@ export class Hud {
           <div class="touch-action-group">
             <button class="dash-button" data-action="dash" type="button" aria-label="Dash (Q)">DASH<span data-dash-cooldown>↗</span></button>
             <button class="jump-button" data-action="jump" type="button" aria-label="Pular">PULAR<span>↑</span></button>
+            <button class="slide-button" data-action="slide" type="button" aria-label="Deslizar">SLIDE<span>C</span></button>
             <button class="power-button" data-action="power" type="button" aria-label="Usar poder (E)" disabled><span data-power-action>PODER</span><span>E</span></button>
             <button class="sprint-button" data-action="sprint">CORRER<span>↗</span></button>
           </div>
@@ -127,14 +128,18 @@ export class Hud {
     const collectedPowerUp =
       state.phase === "playing" &&
       nextLocalPlayer?.powerUp &&
-      (nextLocalPlayer.powerUp !== previousLocalPlayer?.powerUp ||
-        nextLocalPlayer.powerUpExpiresAt >
-          (previousLocalPlayer?.powerUpExpiresAt ?? 0));
+      nextLocalPlayer.powerUp !== previousLocalPlayer?.powerUp;
     const usedPowerUp =
       state.phase === "playing" &&
-      (previousLocalPlayer?.powerUp === "freeze" ||
-        previousLocalPlayer?.powerUp === "grapple") &&
-      nextLocalPlayer?.powerUp === null;
+      Boolean(
+        previousLocalPlayer?.powerUp &&
+          ((nextLocalPlayer?.powerUp === null &&
+            previousLocalPlayer.powerUpExpiresAt === 0) ||
+            (nextLocalPlayer?.powerUp === previousLocalPlayer.powerUp &&
+              previousLocalPlayer.powerUpExpiresAt === 0 &&
+              (nextLocalPlayer.powerUpExpiresAt ?? 0) > 0 &&
+              (nextLocalPlayer.powerUpExpiresAt ?? 0) > Date.now())),
+      );
     this.currentState = state;
     this.localPlayerId = localPlayerId;
     const nextScreen = this.screenForPhase(state.phase);
@@ -145,17 +150,31 @@ export class Hud {
     }
     const touchControls = this.root.querySelector<HTMLElement>("#touch-controls");
     if (touchControls) {
-      touchControls.hidden = nextScreen !== "game";
+      touchControls.hidden =
+        nextScreen !== "game" || Boolean(nextLocalPlayer?.isEliminated);
     }
+    const eliminated = this.root.querySelector<HTMLElement>("[data-eliminated]");
+    if (eliminated) {
+      eliminated.hidden = !nextLocalPlayer?.isEliminated;
+    }
+    const inkOverlay = this.root.querySelector<HTMLElement>("[data-ink-overlay]");
+    inkOverlay?.classList.toggle(
+      "is-active",
+      Boolean(nextLocalPlayer && nextLocalPlayer.inkedUntil > Date.now()),
+    );
+    const slipstream = this.root.querySelector<HTMLElement>(
+      "[data-slipstream-overlay]",
+    );
+    slipstream?.classList.toggle(
+      "is-active",
+      Boolean(nextLocalPlayer?.isSlipstreaming),
+    );
     this.updateLiveValues();
     if (collectedPowerUp && nextLocalPlayer?.powerUp) {
       const label = POWER_UP_LABELS[nextLocalPlayer.powerUp];
       this.callbacks.onPowerUp(nextLocalPlayer.powerUp, "collected");
-      const requiresUse =
-        nextLocalPlayer.powerUp === "freeze" ||
-        nextLocalPlayer.powerUp === "grapple";
       this.showNotification(
-        requiresUse ? `${label} pronto! Use E para ativar.` : `${label} ativada!`,
+        `${label} pronto! Use E para ativar.`,
         "success",
         2600,
       );
@@ -271,6 +290,10 @@ export class Hud {
 
   getDashButton(): HTMLButtonElement {
     return this.requireElement<HTMLButtonElement>('[data-action="dash"]');
+  }
+
+  getSlideButton(): HTMLButtonElement {
+    return this.requireElement<HTMLButtonElement>('[data-action="slide"]');
   }
 
   private bind(): void {
@@ -587,6 +610,7 @@ export class Hud {
           </div>
           <div class="power-status" data-power-status><small>PODER</small><strong data-power-name>Sem poder</strong></div>
           <div class="timer-card" data-timer-card aria-label="Tempo da rodada"><span class="timer-label">TEMPO</span><strong data-timer>03:00</strong><small>RODADA <span data-round-number>01</span></small></div>
+          <div class="tagger-timer" data-tagger-timer hidden><small data-tagger-timer-label>TEMPO DO PEGADOR</small><strong data-tagger-timer-value>00:25</strong></div>
         </div>
         <button class="players-toggle" data-action="toggle-players" type="button" aria-expanded="false" aria-controls="players-panel" aria-label="Mostrar jogadores e eventos" title="Jogadores e eventos">
           ${icon("users")}<span data-player-total>0</span>
@@ -598,8 +622,11 @@ export class Hud {
         </aside>
         <div class="countdown-overlay" data-countdown hidden><span>PREPARADOS?</span><strong data-countdown-value>3</strong></div>
         <div class="first-person-reticle" aria-hidden="true"><span></span><i></i></div>
-        <div class="game-instructions"><span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> mover</span><i></i><span>arraste para olhar</span><i></i><span><kbd>ESPAÇO</kbd> pular</span><i></i><span><kbd>SHIFT</kbd> correr</span><i></i><span><kbd>Q</kbd> dash</span><i></i><span><kbd>E</kbd> poder</span></div>
+        <div class="game-instructions"><span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> mover</span><i></i><span>arraste para olhar</span><i></i><span><kbd>ESPAÇO</kbd> pular</span><i></i><span><kbd>SHIFT</kbd> correr</span><i></i><span><kbd>C</kbd> deslizar</span><i></i><span><kbd>Q</kbd> dash</span><i></i><span><kbd>E</kbd> poder</span></div>
         <div class="tag-flash" data-tag-flash aria-hidden="true"><span>PEGOU!</span></div>
+        <div class="eliminated-overlay" data-eliminated hidden><strong>BOOM!</strong><span>Você virou espectador até a próxima rodada.</span></div>
+        <div class="ink-overlay" data-ink-overlay aria-hidden="true"></div>
+        <div class="slipstream-overlay" data-slipstream-overlay aria-hidden="true"><span>VENTO A FAVOR</span></div>
       </main>
     `;
     this.setSoundEnabled(this.soundEnabled);
@@ -687,6 +714,32 @@ export class Hud {
     const localPlayer = state.players.find(
       (player) => player.id === this.localPlayerId,
     );
+    const taggerTimer = this.root.querySelector<HTMLElement>(
+      "[data-tagger-timer]",
+    );
+    const taggerTimerLabel = this.root.querySelector<HTMLElement>(
+      "[data-tagger-timer-label]",
+    );
+    const taggerTimerValue = this.root.querySelector<HTMLElement>(
+      "[data-tagger-timer-value]",
+    );
+    const penaltySeconds = tagger
+      ? Math.max(
+          0,
+          Math.ceil((tagger.taggerPenaltyEndsAt - Date.now()) / 1000),
+        )
+      : 0;
+    if (taggerTimer && taggerTimerValue && taggerTimerLabel) {
+      taggerTimer.hidden =
+        state.phase !== "playing" || !tagger || !tagger.taggerPenaltyEndsAt;
+      taggerTimerValue.textContent = `00:${String(penaltySeconds).padStart(2, "0")}`;
+      taggerTimerLabel.textContent =
+        tagger?.id === this.localPlayerId ? "SEU TEMPO COMO PEGADOR" : "TEMPO DO PEGADOR";
+      taggerTimer.classList.toggle(
+        "is-urgent",
+        Boolean(tagger && penaltySeconds <= 5),
+      );
+    }
     const dashButton = this.root.querySelector<HTMLButtonElement>(
       '[data-action="dash"]',
     );
@@ -726,7 +779,11 @@ export class Hud {
     const powerName = this.root.querySelector<HTMLElement>("[data-power-name]");
     if (powerButton && powerName) {
       const power = localPlayer?.powerUp ?? null;
-      const canUse = power === "freeze" || power === "grapple";
+      const canUse = Boolean(
+        power &&
+          (!localPlayer?.powerUpExpiresAt ||
+            localPlayer.powerUpExpiresAt <= Date.now()),
+      );
       const remainingSeconds =
         localPlayer && localPlayer.powerUpExpiresAt > 0
           ? Math.ceil(
@@ -736,7 +793,7 @@ export class Hud {
       powerButton.disabled =
         state.phase !== "playing" ||
         !canUse ||
-        Boolean(localPlayer?.isFrozen);
+        Boolean(localPlayer?.isFrozen || localPlayer?.isEliminated);
       powerButton.classList.toggle("is-ready", canUse);
       powerButton.style.setProperty(
         "--power-color",
@@ -744,7 +801,7 @@ export class Hud {
       );
       powerButton.setAttribute(
         "aria-label",
-        canUse
+        power && canUse
           ? `Usar ${POWER_UP_LABELS[power]} (E)`
           : power
             ? `${POWER_UP_LABELS[power]} ativada`
@@ -753,25 +810,37 @@ export class Hud {
       const actionLabel =
         powerButton.querySelector<HTMLElement>("[data-power-action]");
       if (actionLabel) {
-        actionLabel.textContent =
-          power === "freeze"
-            ? "NEVE"
-            : power === "grapple"
-              ? "RAPEL"
-              : power
-                ? "ATIVO"
-                : "PODER";
+        const shortLabels: Record<string, string> = {
+          freeze: "NEVE",
+          grapple: "GANCHO",
+          shockwave: "ONDA",
+          ink: "TINTA",
+          gravity: "GRAV.",
+          swap: "TROCA",
+          speed: "TURBO",
+          jump: "PULO",
+          invisibility: "INVIS.",
+        };
+        actionLabel.textContent = power
+          ? canUse
+            ? shortLabels[power] ?? "PODER"
+            : "ATIVO"
+          : "PODER";
       }
       powerName.textContent = power
         ? `${POWER_UP_LABELS[power]}${
-            canUse ? " · 1 uso" : ` · ${remainingSeconds}s`
+            canUse ? " · E para usar" : ` · ${remainingSeconds}s`
           }`
         : "Sem poder";
     }
     const tagName = this.root.querySelector<HTMLElement>("[data-tag-name]");
     if (tagName) {
       tagName.textContent =
-        tagger?.id === this.localPlayerId ? "VOCÊ!" : tagger?.name ?? "Preparados...";
+        tagger?.id === this.localPlayerId
+          ? "VOCÊ!"
+          : tagger?.isEliminated
+            ? "Escolhendo..."
+            : tagger?.name ?? "Preparados...";
     }
     const tagCard = this.root.querySelector<HTMLElement>("[data-tag-status]");
     tagCard?.classList.toggle("is-you", tagger?.id === this.localPlayerId);
@@ -828,13 +897,17 @@ export class Hud {
       return;
     }
     list.innerHTML = [...state.players]
-      .sort((first, second) => second.survivalPoints - first.survivalPoints)
+      .sort(
+        (first, second) =>
+          Number(first.isEliminated) - Number(second.isEliminated) ||
+          second.survivalPoints - first.survivalPoints,
+      )
       .map(
         (player) => `
-          <div class="live-player ${player.id === this.localPlayerId ? "is-self" : ""} ${player.isIt ? "is-tagged" : ""}">
+          <div class="live-player ${player.id === this.localPlayerId ? "is-self" : ""} ${player.isIt ? "is-tagged" : ""} ${player.isEliminated ? "is-spectator" : ""}">
             <span class="live-player-dot" style="--player-color:${escapeHTML(player.color)}">${escapeHTML(avatarInitial(player.name))}</span>
             <span class="live-player-name">${escapeHTML(player.name)}${player.id === this.localPlayerId ? "<small>VOCÊ</small>" : ""}</span>
-            <span class="live-player-score">${player.survivalPoints}<small> pts</small></span>
+            <span class="live-player-score">${player.isEliminated ? "ESPECT." : `${player.survivalPoints}`}<small>${player.isEliminated ? "" : " pts"}</small></span>
           </div>`,
       )
       .join("");

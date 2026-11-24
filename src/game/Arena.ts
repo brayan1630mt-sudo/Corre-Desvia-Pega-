@@ -1,17 +1,24 @@
 import * as THREE from "three";
 import {
   ARENA,
+  ARENA_RAMPS,
   BUILDING_LADDERS,
   BUILDING_ROOF_THICKNESS,
   CLIMBABLE_PLATFORMS,
+  ELEVATED_PLATFORM_THICKNESS,
   LADDER_RUNG_SPACING,
   LADDER_TOP_EXTENSION,
   OBSTACLES,
   PALETTE,
   POWER_UP_COLORS,
+  VERTICAL_PLATFORMS,
 } from "../shared/constants.ts";
 import { seededRandom } from "../shared/math.ts";
-import type { PowerUpState, SnowballState } from "../shared/types.ts";
+import type {
+  ArenaEffectState,
+  PowerUpState,
+  SnowballState,
+} from "../shared/types.ts";
 
 const SHADOW_MAP_SIZE = 2048;
 const FOG_NEAR = 48;
@@ -35,6 +42,7 @@ export class Arena {
   private animationTime = 0;
   private cameraYaw = 0;
   private cameraPitch = 0;
+  private cameraRoll = 0;
   private locomotionTime = 0;
   private armGaitAmount = 0;
   private armJumpAmount = 0;
@@ -48,6 +56,8 @@ export class Arena {
   private readonly powerUpGroup = new THREE.Group();
   private readonly powerUpMaterials: THREE.MeshStandardMaterial[] = [];
   private readonly snowballViews = new Map<string, THREE.Mesh>();
+  private readonly effectViews = new Map<string, THREE.Mesh>();
+  private readonly effectBeams = new Map<string, THREE.Line>();
   private activePowerUpKey = "";
   private resizeObserver: ResizeObserver | null = null;
   private disposed = false;
@@ -94,6 +104,8 @@ export class Arena {
     this.addObstacles();
     this.addParkourPads();
     this.addClimbablePlatforms();
+    this.addVerticalPlatforms();
+    this.addRamps();
     this.addBuildingLadders();
     this.addLandscaping();
     this.addSkyDetails();
@@ -111,6 +123,234 @@ export class Arena {
   setFirstPersonColor(color: string): void {
     for (const material of this.armMaterials) {
       material.color.set(color);
+    }
+  }
+
+  private addVerticalPlatforms(): void {
+    const deckMaterials = [
+      new THREE.MeshStandardMaterial({
+        color: "#536e70",
+        roughness: 0.72,
+        metalness: 0.18,
+      }),
+      new THREE.MeshStandardMaterial({
+        color: "#5e6279",
+        roughness: 0.68,
+        metalness: 0.22,
+      }),
+    ];
+    const panelMaterials = [
+      new THREE.MeshStandardMaterial({ color: "#788b85", roughness: 0.76 }),
+      new THREE.MeshStandardMaterial({ color: "#84958d", roughness: 0.76 }),
+    ];
+    const trimMaterials = [
+      new THREE.MeshStandardMaterial({
+        color: "#76e5cf",
+        emissive: "#248d7d",
+        emissiveIntensity: 0.38,
+        roughness: 0.42,
+      }),
+      new THREE.MeshStandardMaterial({
+        color: "#c5a5ff",
+        emissive: "#684da1",
+        emissiveIntensity: 0.38,
+        roughness: 0.42,
+      }),
+    ];
+    const girderMaterial = new THREE.MeshStandardMaterial({
+      color: "#35474d",
+      roughness: 0.82,
+      metalness: 0.16,
+    });
+    for (const platform of VERTICAL_PLATFORMS) {
+      const levelIndex = platform.height >= 6 ? 1 : 0;
+      const deckMaterial = deckMaterials[levelIndex]!;
+      const trimMaterial = trimMaterials[levelIndex]!;
+      const deck = new THREE.Mesh(
+        new THREE.BoxGeometry(
+          platform.width,
+          ELEVATED_PLATFORM_THICKNESS,
+          platform.depth,
+        ),
+        deckMaterial,
+      );
+      deck.position.set(
+        platform.x,
+        platform.height - ELEVATED_PLATFORM_THICKNESS / 2,
+        platform.z,
+      );
+      deck.castShadow = true;
+      deck.receiveShadow = true;
+      this.world.add(deck);
+
+      const topPanel = new THREE.Mesh(
+        new THREE.BoxGeometry(
+          platform.width - 0.18,
+          0.012,
+          platform.depth - 0.36,
+        ),
+        panelMaterials[levelIndex]!,
+      );
+      topPanel.position.set(platform.x, platform.height + 0.004, platform.z);
+      topPanel.receiveShadow = true;
+      this.world.add(topPanel);
+
+      const isHorizontal = platform.width > platform.depth;
+      const railLength = isHorizontal ? platform.width : platform.depth;
+      const railOffset = isHorizontal
+        ? platform.depth / 2 - 0.08
+        : platform.width / 2 - 0.08;
+      for (const side of [-1, 1]) {
+        const rail = new THREE.Mesh(
+          new THREE.BoxGeometry(
+            isHorizontal ? railLength : 0.16,
+            0.12,
+            isHorizontal ? 0.16 : railLength,
+          ),
+          deckMaterial,
+        );
+        rail.position.set(
+          platform.x + (isHorizontal ? 0 : side * railOffset),
+          platform.height + 0.06,
+          platform.z + (isHorizontal ? side * railOffset : 0),
+        );
+        rail.castShadow = true;
+        this.world.add(rail);
+
+        const trim = new THREE.Mesh(
+          new THREE.BoxGeometry(
+            isHorizontal ? railLength : 0.045,
+            0.025,
+            isHorizontal ? 0.045 : railLength,
+          ),
+          trimMaterial,
+        );
+        trim.position.set(
+          platform.x + (isHorizontal ? 0 : side * railOffset),
+          platform.height + 0.125,
+          platform.z + (isHorizontal ? side * railOffset : 0),
+        );
+        this.world.add(trim);
+      }
+
+      if (isHorizontal) {
+        for (
+          let offset = -platform.width / 2 + 2;
+          offset < platform.width / 2 - 1;
+          offset += 4
+        ) {
+          const panel = new THREE.Mesh(
+            new THREE.BoxGeometry(3.55, 0.006, platform.depth - 0.52),
+            panelMaterials[Math.round((offset + platform.width / 2) / 4) % 2]!,
+          );
+          panel.position.set(
+            platform.x + offset,
+            platform.height + 0.012,
+            platform.z,
+          );
+          this.world.add(panel);
+
+          const rib = new THREE.Mesh(
+            new THREE.BoxGeometry(0.16, 0.18, platform.depth - 0.12),
+            girderMaterial,
+          );
+          rib.position.set(
+            platform.x + offset,
+            platform.height -
+              ELEVATED_PLATFORM_THICKNESS -
+              0.09,
+            platform.z,
+          );
+          rib.castShadow = true;
+          this.world.add(rib);
+        }
+
+        const centerStripe = new THREE.Mesh(
+          new THREE.BoxGeometry(platform.width - 0.5, 0.006, 0.08),
+          trimMaterial,
+        );
+        centerStripe.position.set(
+          platform.x,
+          platform.height + 0.016,
+          platform.z,
+        );
+        this.world.add(centerStripe);
+      }
+    }
+  }
+
+  private addRamps(): void {
+    const rampMaterial = new THREE.MeshStandardMaterial({
+      color: "#788487",
+      roughness: 0.86,
+      metalness: 0.08,
+      side: THREE.DoubleSide,
+    });
+    for (const ramp of ARENA_RAMPS) {
+      const alongLength = ramp.axis === "x" ? ramp.width : ramp.depth;
+      const acrossWidth = ramp.axis === "x" ? ramp.depth : ramp.width;
+      const alongCenter = ramp.axis === "x" ? ramp.x : ramp.z;
+      const acrossCenter = ramp.axis === "x" ? ramp.z : ramp.x;
+      const low = alongCenter + (ramp.direction === 1 ? -1 : 1) * alongLength / 2;
+      const high = alongCenter - (ramp.direction === 1 ? -1 : 1) * alongLength / 2;
+      const lowA = ramp.axis === "x"
+        ? [low, ramp.startY, acrossCenter - acrossWidth / 2]
+        : [acrossCenter - acrossWidth / 2, ramp.startY, low];
+      const lowB = ramp.axis === "x"
+        ? [low, ramp.startY, acrossCenter + acrossWidth / 2]
+        : [acrossCenter + acrossWidth / 2, ramp.startY, low];
+      const highA = ramp.axis === "x"
+        ? [high, ramp.endY, acrossCenter - acrossWidth / 2]
+        : [acrossCenter - acrossWidth / 2, ramp.endY, high];
+      const highB = ramp.axis === "x"
+        ? [high, ramp.endY, acrossCenter + acrossWidth / 2]
+        : [acrossCenter + acrossWidth / 2, ramp.endY, high];
+      const geometry = new THREE.BufferGeometry();
+      geometry.setAttribute(
+        "position",
+        new THREE.Float32BufferAttribute(
+          [...lowA, ...lowB, ...highA, ...highB],
+          3,
+        ),
+      );
+      geometry.setIndex([0, 2, 1, 1, 2, 3]);
+      geometry.computeVertexNormals();
+      const surface = new THREE.Mesh(geometry, rampMaterial);
+      surface.receiveShadow = true;
+      surface.castShadow = true;
+      this.world.add(surface);
+    }
+  }
+
+  private addParkourWall(
+    x: number,
+    z: number,
+    width: number,
+    depth: number,
+    height: number,
+  ): void {
+    const wall = new THREE.Mesh(
+      new THREE.BoxGeometry(width, height, depth),
+      new THREE.MeshStandardMaterial({
+        color: "#687579",
+        roughness: 0.88,
+        metalness: 0.08,
+      }),
+    );
+    wall.position.set(x, height / 2, z);
+    wall.castShadow = true;
+    wall.receiveShadow = true;
+    this.world.add(wall);
+    for (const y of [0.18, height - 0.2]) {
+      const stripe = new THREE.Mesh(
+        new THREE.BoxGeometry(width + 0.04, 0.08, depth + 0.04),
+        new THREE.MeshStandardMaterial({
+          color: y < 1 ? "#91d9cb" : "#d1d8d1",
+          roughness: 0.68,
+        }),
+      );
+      stripe.position.set(x, y, z);
+      this.world.add(stripe);
     }
   }
 
@@ -155,12 +395,15 @@ export class Arena {
     for (const snowball of snowballs) {
       let mesh = this.snowballViews.get(snowball.id);
       if (!mesh) {
+        const isInk = snowball.kind === "ink";
         mesh = new THREE.Mesh(
-          new THREE.SphereGeometry(0.22, 16, 12),
+          isInk
+            ? new THREE.SphereGeometry(0.28, 16, 12)
+            : new THREE.SphereGeometry(0.22, 16, 12),
           new THREE.MeshStandardMaterial({
-            color: POWER_UP_COLORS.freeze,
-            emissive: "#83cce8",
-            emissiveIntensity: 0.62,
+            color: isInk ? POWER_UP_COLORS.ink : "#d9f6ff",
+            emissive: isInk ? "#5d4c86" : "#83cce8",
+            emissiveIntensity: isInk ? 0.45 : 0.62,
             roughness: 0.25,
           }),
         );
@@ -172,6 +415,86 @@ export class Arena {
     }
   }
 
+  setEffects(effects: ArenaEffectState[]): void {
+    const activeIds = new Set(effects.map((effect) => effect.id));
+    for (const [id, mesh] of this.effectViews) {
+      if (activeIds.has(id)) continue;
+      this.scene.remove(mesh);
+      mesh.geometry.dispose();
+      (mesh.material as THREE.Material).dispose();
+      this.effectViews.delete(id);
+    }
+    for (const [id, beam] of this.effectBeams) {
+      if (activeIds.has(id)) continue;
+      this.scene.remove(beam);
+      beam.geometry.dispose();
+      (beam.material as THREE.Material).dispose();
+      this.effectBeams.delete(id);
+    }
+
+    for (const effect of effects) {
+      let mesh = this.effectViews.get(effect.id);
+      if (!mesh) {
+        mesh = new THREE.Mesh(
+          new THREE.TorusGeometry(1, 0.09, 8, 48),
+          new THREE.MeshBasicMaterial({
+            color:
+              effect.type === "shockwave"
+                ? "#ffbd76"
+                : effect.type === "ink"
+                  ? "#6d5aa8"
+                  : "#fa86bb",
+            transparent: true,
+            opacity: 0.85,
+          }),
+        );
+        mesh.rotation.x = Math.PI / 2;
+        this.effectViews.set(effect.id, mesh);
+        this.scene.add(mesh);
+      }
+      const progress = Math.min(
+        1,
+        Math.max(
+          0,
+          (Date.now() - effect.startedAt) /
+            Math.max(1, effect.expiresAt - effect.startedAt),
+        ),
+      );
+      mesh.position.set(effect.x, effect.y + 0.12, effect.z);
+      mesh.scale.setScalar(1 + progress * 5);
+      (mesh.material as THREE.MeshBasicMaterial).opacity = 0.85 * (1 - progress);
+      if (effect.type === "swap" && effect.end) {
+        let beam = this.effectBeams.get(effect.id);
+        if (!beam) {
+          const geometry = new THREE.BufferGeometry();
+          geometry.setAttribute(
+            "position",
+            new THREE.Float32BufferAttribute(new Float32Array(6), 3),
+          );
+          beam = new THREE.Line(
+            geometry,
+            new THREE.LineBasicMaterial({
+              color: "#fa86bb",
+              transparent: true,
+              opacity: 0.95,
+            }),
+          );
+          this.effectBeams.set(effect.id, beam);
+          this.scene.add(beam);
+        }
+        const positions = beam.geometry.getAttribute(
+          "position",
+        ) as THREE.BufferAttribute;
+        positions.setXYZ(0, effect.x, effect.y, effect.z);
+        positions.setXYZ(1, effect.end.x, effect.end.y, effect.end.z);
+        positions.needsUpdate = true;
+        beam.geometry.computeBoundingSphere();
+        (beam.material as THREE.LineBasicMaterial).opacity =
+          0.95 * (1 - progress);
+      }
+    }
+  }
+
   focusOn(
     position: THREE.Vector3,
     deltaSeconds: number,
@@ -179,6 +502,8 @@ export class Arena {
     isSprinting = false,
     isJumping = false,
     isDashing = false,
+    wallRunSide: -1 | 0 | 1 = 0,
+    isSliding = false,
   ): void {
     const cadence = isDashing ? 17 : isSprinting ? 13 : 8.5;
     if (isMoving || isDashing) {
@@ -198,7 +523,7 @@ export class Arena {
       : isMoving
         ? Math.sin(this.locomotionTime * 2) * (isSprinting ? 0.042 : 0.02)
         : 0;
-    const eyeHeight = 1.57 + bob;
+    const eyeHeight = (isSliding ? 1.08 : 1.57) + bob;
     this.desiredCamera.set(position.x, position.y + eyeHeight, position.z);
     const horizontalLook = Math.cos(this.cameraPitch) * 12;
     this.lookTarget.set(
@@ -223,6 +548,9 @@ export class Arena {
     const cameraSmoothing = 1 - Math.exp(-deltaSeconds * 19);
     this.camera.position.lerp(this.desiredCamera, cameraSmoothing);
     this.camera.lookAt(this.lookTarget);
+    this.cameraRoll +=
+      (wallRunSide * 0.11 - this.cameraRoll) * cameraSmoothing;
+    this.camera.rotateZ(this.cameraRoll);
   }
 
   render(): void {
@@ -257,6 +585,12 @@ export class Arena {
     }
     this.disposed = true;
     this.resizeObserver?.disconnect();
+    for (const beam of this.effectBeams.values()) {
+      this.scene.remove(beam);
+      beam.geometry.dispose();
+      (beam.material as THREE.Material).dispose();
+    }
+    this.effectBeams.clear();
     this.scene.traverse((object) => {
       const mesh = object as THREE.Mesh;
       if (!mesh.isMesh) {
@@ -656,6 +990,14 @@ export class Arena {
     for (const obstacle of OBSTACLES) {
       if (obstacle.kind === "building") {
         this.addBuilding(
+          obstacle.x,
+          obstacle.z,
+          obstacle.width,
+          obstacle.depth,
+          obstacle.height,
+        );
+      } else if (obstacle.kind === "wall") {
+        this.addParkourWall(
           obstacle.x,
           obstacle.z,
           obstacle.width,

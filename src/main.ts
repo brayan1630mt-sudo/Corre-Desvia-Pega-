@@ -85,6 +85,7 @@ const preferences = readPreferences();
 let localPlayerId = "";
 let previousPhase: RoomState["phase"] | null = null;
 let joinedRoomCode = "";
+let lastUrgencySecond = -1;
 
 const sound = new SoundEffects();
 sound.setEnabled(preferences.soundEnabled);
@@ -94,6 +95,20 @@ const network = new NetworkClient({
   onState: (state) => {
     game.setRoomState(state);
     hud.setRoomState(state, localPlayerId);
+    const localPlayer = state.players.find(
+      (player) => player.id === localPlayerId,
+    );
+    if (localPlayer?.isIt && localPlayer.taggerPenaltyEndsAt > 0) {
+      const secondsLeft = Math.ceil(
+        Math.max(0, localPlayer.taggerPenaltyEndsAt - Date.now()) / 1000,
+      );
+      if (secondsLeft > 0 && secondsLeft <= 5 && secondsLeft !== lastUrgencySecond) {
+        sound.play("tick");
+      }
+      lastUrgencySecond = secondsLeft;
+    } else {
+      lastUrgencySecond = -1;
+    }
     if (previousPhase !== state.phase) {
       if (state.phase === "playing") {
         sound.play("start");
@@ -281,6 +296,22 @@ dashButton.addEventListener("pointerdown", (event) => {
   event.preventDefault();
   game.input.requestDash();
 });
+
+const slideButton = hud.getSlideButton();
+slideButton.addEventListener("pointerdown", (event) => {
+  event.preventDefault();
+  game.input.setSlide(true);
+  slideButton.setPointerCapture(event.pointerId);
+  slideButton.classList.add("is-sliding");
+});
+const stopSlide = (): void => {
+  game.input.setSlide(false);
+  slideButton.classList.remove("is-sliding");
+};
+slideButton.addEventListener("pointerup", stopSlide);
+slideButton.addEventListener("pointercancel", stopSlide);
+slideButton.addEventListener("lostpointercapture", stopSlide);
+slideButton.addEventListener("pointerleave", stopSlide);
 
 app.addEventListener(
   "pointerdown",

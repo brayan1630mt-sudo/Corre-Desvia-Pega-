@@ -9,15 +9,20 @@ import {
 } from "../server/room.js";
 import {
   ARENA,
+  ARENA_RAMPS,
   BUILDING_LADDERS,
   CLIMBABLE_PLATFORMS,
+  ELEVATED_PLATFORM_THICKNESS,
   LADDER_CLIMB_SPEED,
   MAX_JUMP_HEIGHT,
   OBSTACLES,
+  PARKOUR,
   PLAYER_COLORS,
+  ROUND,
   SPAWN_POINTS,
+  VERTICAL_PLATFORMS,
 } from "../src/shared/constants.ts";
-import { resolveArenaPosition } from "../src/shared/math.ts";
+import { rampHeightAt, resolveArenaPosition } from "../src/shared/math.ts";
 
 test("sanitizes display names without changing useful accents", () => {
   assert.equal(sanitizePlayerName("  João   da Silva  "), "João da Silva");
@@ -42,12 +47,13 @@ test("bounds movement input and rejects non-finite axes", () => {
     jump: true,
     dash: true,
     usePower: true,
+    slide: false,
     yaw: 0,
     pitch: 0,
   });
   assert.deepEqual(
     normalizePlayerInput({ forward: Number.NaN, right: "left", sprint: 1 }),
-    { forward: 0, right: 0, sprint: false, jump: false, dash: false, usePower: false, yaw: 0, pitch: 0 },
+    { forward: 0, right: 0, sprint: false, jump: false, dash: false, usePower: false, slide: false, yaw: 0, pitch: 0 },
   );
 });
 
@@ -97,6 +103,27 @@ test("low street barriers block ground movement but can be crossed in a jump", (
     barrier.height,
   );
   assert.ok(airborne.x > blocked.x);
+});
+
+test("rounded obstacle corners do not push players farther than their hitbox", () => {
+  const barrier = OBSTACLES.find((obstacle) => obstacle.kind === "barrier");
+  assert.ok(barrier);
+  const corner = {
+    x: barrier.x + barrier.width / 2,
+    z: barrier.z + barrier.depth / 2,
+  };
+  const start = { x: corner.x + 0.3, z: corner.z + 0.3 };
+  const resolved = resolveArenaPosition(start, { x: 0, z: 0 });
+
+  assert.ok(resolved.x > start.x);
+  assert.ok(resolved.z > start.z);
+  assert.ok(
+    Math.abs(
+      Math.hypot(resolved.x - corner.x, resolved.z - corner.z) -
+        ARENA.playerRadius,
+    ) < 0.0001,
+  );
+  assert.deepEqual(clampPlayerPosition(start), resolved);
 });
 
 test("the room server clamps a grounded player against a street barrier", () => {
@@ -281,6 +308,30 @@ test("climbable objects are spread around the arena instead of forming stair run
       assert.ok(a && b);
       assert.ok(Math.hypot(a.x - b.x, a.z - b.z) >= 6);
     }
+  }
+});
+
+test("the three arena levels are connected by server-shared ramps", () => {
+  assert.equal(ARENA_RAMPS.length, 4);
+  assert.equal(VERTICAL_PLATFORMS.filter((platform) => platform.height === 3).length, 2);
+  assert.equal(VERTICAL_PLATFORMS.filter((platform) => platform.height === 6).length, 2);
+  for (const ramp of ARENA_RAMPS) {
+    const lowCoordinate =
+      ramp.axis === "x"
+        ? ramp.x + (ramp.direction === 1 ? -ramp.width / 2 : ramp.width / 2)
+        : ramp.z + (ramp.direction === 1 ? -ramp.depth / 2 : ramp.depth / 2);
+    const highCoordinate =
+      ramp.axis === "x"
+        ? ramp.x + (ramp.direction === 1 ? ramp.width / 2 : -ramp.width / 2)
+        : ramp.z + (ramp.direction === 1 ? ramp.depth / 2 : -ramp.depth / 2);
+    const low = ramp.axis === "x"
+      ? rampHeightAt(lowCoordinate, ramp.z)
+      : rampHeightAt(ramp.x, lowCoordinate);
+    const high = ramp.axis === "x"
+      ? rampHeightAt(highCoordinate, ramp.z)
+      : rampHeightAt(ramp.x, highCoordinate);
+    assert.ok(Math.abs(low - ramp.startY) < 0.001);
+    assert.ok(Math.abs(high - ramp.endY) < 0.001);
   }
 });
 
@@ -476,6 +527,105 @@ test("dashes in the view direction and enforces a server-side cooldown", () => {
   assert.equal(state.players.find((entry) => entry.id === "one").isDashing, true);
 });
 
+test("sprinting slide preserves momentum and marks a reduced hitbox", () => {
+  let now = 1000;
+  const room = new GameRoom("SLIDE", { random: () => 0, clock: () => now });
+  room.addPlayer("one", "Um");
+  room.addPlayer("two", "Dois");
+  room.startGame("one");
+  now += 4500;
+  room.tick(now);
+  const player = room.players.get("one");
+  player.x = 0;
+  player.z = 0;
+  room.setInput("one", { forward: 1, sprint: true });
+  now += 50;
+  room.tick(now);
+  const beforeSlide = player.z;
+
+  room.setInput("one", { forward: 1, sprint: true, slide: true });
+  now += 50;
+  const state = room.tick(now);
+  assert.equal(player.isSliding, true);
+  assert.ok(player.z < beforeSlide - 0.4);
+  assert.equal(state.players.find((entry) => entry.id === "one").isSliding, true);
+  assert.equal(PARKOUR.slideHeight < ARENA.playerHeight, true);
+});
+
+test("sprint-jumping beside a wall starts wall-run and jump-kicks outward", () => {
+  let now = 1000;
+  const room = new GameRoom("WALLR", { random: () => 0, clock: () => now });
+  room.addPlayer("one", "Um");
+  room.addPlayer("two", "Dois");
+  room.startGame("one");
+  now += 4500;
+  room.tick(now);
+  const player = room.players.get("one");
+  player.x = -6.17;
+  player.z = 0;
+  room.setInput("one", { forward: 1, sprint: true, jump: true });
+  now += 50;
+  let state = room.tick(now);
+  assert.equal(player.isWallRunning, true);
+  assert.equal(state.players.find((entry) => entry.id === "one").isWallRunning, true);
+
+  room.setInput("one", { forward: 1, sprint: true, jump: false });
+  now += 50;
+  room.tick(now);
+  const xBeforeKick = player.x;
+  room.setInput("one", { forward: 1, sprint: true, jump: true });
+  now += 50;
+  state = room.tick(now);
+  assert.equal(player.isWallRunning, false);
+  assert.ok(player.x < xBeforeKick);
+});
+
+test("sprint-vault carries a player over a low barrier", () => {
+  let now = 1000;
+  const room = new GameRoom("VAULT", { random: () => 0, clock: () => now });
+  room.addPlayer("one", "Um");
+  room.addPlayer("two", "Dois");
+  room.startGame("one");
+  now += 4500;
+  room.tick(now);
+  const player = room.players.get("one");
+  player.x = 0;
+  player.z = -5.7;
+  for (let step = 0; step < 12; step += 1) {
+    room.setInput("one", { forward: 1, sprint: true });
+    now += 50;
+    room.tick(now);
+  }
+  assert.ok(player.z < -8.5);
+  assert.ok(player.y >= 0);
+});
+
+test("a runner behind another gains slipstream after one continuous second", () => {
+  let now = 1000;
+  const room = new GameRoom("SLIP", { random: () => 0, clock: () => now });
+  room.addPlayer("one", "Um");
+  room.addPlayer("two", "Dois");
+  room.startGame("one");
+  now += 4500;
+  room.tick(now);
+  const follower = room.players.get("one");
+  const leader = room.players.get("two");
+  follower.x = leader.x = 14;
+  follower.z = 2;
+  leader.z = -2;
+  for (let step = 0; step < 23; step += 1) {
+    room.setInput("one", { forward: 1, sprint: true, yaw: 0 });
+    room.setInput("two", { forward: 1, sprint: true, yaw: 0 });
+    now += 50;
+    room.tick(now);
+  }
+  assert.equal(follower.isSlipstreaming, true);
+  assert.equal(
+    room.getState(now).players.find((entry) => entry.id === "one").isSlipstreaming,
+    true,
+  );
+});
+
 test("jumps once per press and lands under server physics", () => {
   let now = 1000;
   const room = new GameRoom("JUMP1", { random: () => 0, clock: () => now });
@@ -534,6 +684,37 @@ test("lands on a raised platform and can jump again from its top", () => {
   assert.ok(player.y > platform.height);
 });
 
+test("deck collision stops a jump at the actual underside", () => {
+  let now = 1000;
+  const room = new GameRoom("UNDER", { random: () => 0, clock: () => now });
+  room.addPlayer("one", "Um");
+  room.addPlayer("two", "Dois");
+  room.startGame("one");
+  now += 4500;
+  room.tick(now);
+
+  const player = room.players.get("one");
+  const deck = VERTICAL_PLATFORMS.find((platform) => platform.height === 3);
+  assert.ok(deck);
+  player.x = deck.x;
+  player.z = deck.z;
+  player.y = 0;
+  player.verticalVelocity = 0;
+  room.setInput("one", { jump: true });
+  now += 50;
+  room.tick(now);
+  room.setInput("one", { jump: false });
+
+  for (let step = 0; step < 20 && player.verticalVelocity > 0; step += 1) {
+    now += 50;
+    room.tick(now);
+  }
+
+  const underside = deck.height - ELEVATED_PLATFORM_THICKNESS;
+  assert.ok(Math.abs(player.y + ARENA.playerHeight - underside) < 0.001);
+  assert.equal(player.verticalVelocity, 0);
+});
+
 test("spawns crystals during a round and grants collected boosts", () => {
   let now = 1000;
   const room = new GameRoom("CRYST", { random: () => 0, clock: () => now });
@@ -556,12 +737,17 @@ test("spawns crystals during a round and grants collected boosts", () => {
   const state = room.tick(now);
   assert.equal(room.powerUp, null);
   assert.equal(player.powerUp, crystal.type);
-  assert.equal(player.powerUpExpiresAt, now + 7000);
+  assert.equal(player.powerUpExpiresAt, 0);
   assert.equal(state.players.find((entry) => entry.id === "one").powerUp, "speed");
+
+  room.setInput("one", { usePower: true });
+  now += 50;
+  room.tick(now);
+  assert.equal(player.powerUpExpiresAt, now + 7000);
 
   player.x = 5;
   player.z = 0;
-  room.setInput("one", { forward: 1 });
+  room.setInput("one", { forward: 1, usePower: false });
   now += 50;
   room.tick(now);
   assert.ok(player.z < -0.5);
@@ -604,6 +790,12 @@ test("invisibility pickups hide the player for a limited time", () => {
   now += 50;
   let state = room.tick(now);
   assert.equal(player.powerUp, "invisibility");
+  assert.equal(player.powerUpExpiresAt, 0);
+  assert.equal(state.players.find((entry) => entry.id === "one").isInvisible, false);
+
+  room.setInput("one", { usePower: true });
+  now += 50;
+  state = room.tick(now);
   assert.equal(player.powerUpExpiresAt, now + 7000);
   assert.equal(state.players.find((entry) => entry.id === "one").isInvisible, true);
 
@@ -745,6 +937,179 @@ test("tags nearby players and announces the new tagger", () => {
   assert.ok(events.some((event) => event.name === "game:tag"));
 });
 
+test("the tag penalty transfers with only three seconds of extra time", () => {
+  let now = 1000;
+  const room = new GameRoom("HOT1", { random: () => 0, clock: () => now });
+  room.addPlayer("one", "Um");
+  room.addPlayer("two", "Dois");
+  room.addPlayer("three", "Tres");
+  room.startGame("one");
+  now += 4500;
+  room.tick(now);
+  const tagger = room.players.get("one");
+  const target = room.players.get("two");
+  assert.equal(
+    tagger.taggerPenaltyEndsAt,
+    now + ROUND.taggerPenaltySeconds * 1000,
+  );
+  tagger.x = target.x = 0;
+  tagger.z = target.z = 0;
+  const inheritedDeadline = tagger.taggerPenaltyEndsAt;
+
+  now += ROUND.tagCooldownMs;
+  room.checkForTag(now);
+  assert.equal(room.itPlayerId, target.id);
+  assert.equal(
+    target.taggerPenaltyEndsAt,
+    inheritedDeadline + ROUND.tagTransferGraceMs,
+  );
+});
+
+test("a tagger timeout eliminates them and chooses a new tagger", () => {
+  let now = 1000;
+  const room = new GameRoom("HOT2", { random: () => 0, clock: () => now });
+  room.addPlayer("one", "Um");
+  room.addPlayer("two", "Dois");
+  room.addPlayer("three", "Tres");
+  room.startGame("one");
+  now += 4500;
+  room.tick(now);
+  const expiredTagger = room.players.get("one");
+  const deadline = expiredTagger.taggerPenaltyEndsAt;
+
+  room.checkTaggerPenalty(deadline);
+  assert.equal(expiredTagger.isEliminated, true);
+  assert.equal(room.itPlayerId, "two");
+  assert.equal(room.players.get("two").isIt, true);
+  assert.equal(
+    room.players.get("two").taggerPenaltyEndsAt,
+    deadline + ROUND.taggerPenaltySeconds * 1000,
+  );
+  assert.equal(room.setInput("one", { forward: 1 }), false);
+  assert.equal(room.getState(deadline).players.find((player) => player.id === "one").isEliminated, true);
+});
+
+test("a timeout with one fugitive ends the round and leaves the winner active", () => {
+  let now = 1000;
+  const room = new GameRoom("HOT3", { random: () => 0, clock: () => now });
+  room.addPlayer("one", "Um");
+  room.addPlayer("two", "Dois");
+  room.startGame("one");
+  now += 4500;
+  room.tick(now);
+  const tagger = room.players.get("one");
+  room.checkTaggerPenalty(tagger.taggerPenaltyEndsAt);
+  assert.equal(room.phase, "finished");
+  assert.equal(room.winnerId, "two");
+  assert.equal(tagger.isEliminated, true);
+});
+
+test("shockwave knocks back opponents without transferring the tag", () => {
+  let now = 1000;
+  const room = new GameRoom("SHOCK", { random: () => 0, clock: () => now });
+  room.addPlayer("one", "Um");
+  room.addPlayer("two", "Dois");
+  room.startGame("one");
+  now += 4500;
+  room.tick(now);
+  const source = room.players.get("one");
+  const target = room.players.get("two");
+  source.x = 0;
+  source.z = 0;
+  source.powerUp = "shockwave";
+  target.x = 0;
+  target.z = -2;
+  room.setInput("one", { usePower: true });
+  now += 50;
+  let state = room.tick(now);
+  assert.equal(source.powerUp, null);
+  assert.equal(target.isIt, false);
+  assert.ok(target.z < -2);
+  assert.ok(target.verticalVelocity > 0);
+  assert.ok(state.effects.some((effect) => effect.type === "shockwave"));
+});
+
+test("ink grenade splashes nearby players for three seconds", () => {
+  let now = 1000;
+  const room = new GameRoom("INK01", { random: () => 0, clock: () => now });
+  room.addPlayer("one", "Um");
+  room.addPlayer("two", "Dois");
+  room.startGame("one");
+  now += 4500;
+  room.tick(now);
+  const thrower = room.players.get("one");
+  const target = room.players.get("two");
+  thrower.x = 0;
+  thrower.z = 0;
+  thrower.powerUp = "ink";
+  target.x = 0;
+  target.z = -5;
+  room.setInput("one", { usePower: true, yaw: 0, pitch: 0 });
+  now += 50;
+  room.tick(now);
+  room.setInput("one", { usePower: false, yaw: 0, pitch: 0 });
+
+  for (let step = 0; step < 12 && target.inkedUntil <= now; step += 1) {
+    now += 50;
+    room.tick(now);
+  }
+  assert.ok(target.inkedUntil > now);
+  assert.ok(target.inkedUntil - now <= 3000);
+  assert.equal(room.snowballs.length, 0);
+});
+
+test("gravity inversion lowers authoritative gravity for four seconds", () => {
+  let now = 1000;
+  const room = new GameRoom("GRAV1", { random: () => 0, clock: () => now });
+  room.addPlayer("one", "Um");
+  room.addPlayer("two", "Dois");
+  room.startGame("one");
+  now += 4500;
+  room.tick(now);
+  const player = room.players.get("one");
+  player.x = 0;
+  player.z = -3;
+  player.y = 3;
+  player.powerUp = "gravity";
+  room.setInput("one", { usePower: true });
+  now += 50;
+  room.tick(now);
+  const gravityEndsAt = player.gravityInvertedUntil;
+  assert.equal(gravityEndsAt, now + 4000);
+  room.setInput("one", { usePower: false });
+  now += 50;
+  const velocityBeforeReducedGravity = player.verticalVelocity;
+  room.tick(now);
+  assert.ok(player.verticalVelocity > velocityBeforeReducedGravity - 0.5);
+});
+
+test("swap ray exchanges player positions and momentum", () => {
+  let now = 1000;
+  const room = new GameRoom("SWAP1", { random: () => 0, clock: () => now });
+  room.addPlayer("one", "Um");
+  room.addPlayer("two", "Dois");
+  room.startGame("one");
+  now += 4500;
+  room.tick(now);
+  const shooter = room.players.get("one");
+  const target = room.players.get("two");
+  shooter.x = 0;
+  shooter.z = 0;
+  shooter.powerUp = "swap";
+  target.x = 0;
+  target.z = -5;
+  room.setInput("two", { right: 1 });
+  room.setInput("one", { usePower: true, yaw: 0, pitch: 0 });
+  now += 50;
+  const state = room.tick(now);
+  assert.equal(shooter.powerUp, null);
+  assert.ok(Math.abs(shooter.z + 5) < 0.001);
+  assert.ok(Math.abs(target.z) < 0.001);
+  assert.ok(shooter.velocityX > 6);
+  assert.equal(target.velocityX, 0);
+  assert.ok(state.effects.some((effect) => effect.type === "swap"));
+});
+
 test("does not tag a player who is high enough above the ground", () => {
   let now = 1000;
   const room = new GameRoom("TAGJP", { random: () => 0, clock: () => now });
@@ -763,6 +1128,72 @@ test("does not tag a player who is high enough above the ground", () => {
   room.checkForTag(now);
   assert.equal(room.itPlayerId, chaser.id);
   assert.equal(target.isIt, false);
+});
+
+test("sends timed relative hints only to the current tagger", () => {
+  let now = 1000;
+  const hints = [];
+  const broadcastEvents = [];
+  const room = new GameRoom("HINT1", {
+    random: () => 0,
+    clock: () => now,
+    onEvent: (name, payload) => broadcastEvents.push({ name, payload }),
+    onHint: (playerId, hint) => hints.push({ playerId, hint }),
+  });
+  room.addPlayer("one", "Pegador");
+  room.addPlayer("two", "Corredor");
+  room.startGame("one");
+  now += 4500;
+  room.tick(now);
+
+  const chaser = room.players.get("one");
+  const target = room.players.get("two");
+  chaser.x = 0;
+  chaser.z = 0;
+  chaser.rotation = 0;
+  target.x = 0;
+  target.z = -8;
+  room.nextHintAt = now + 50;
+  now += 50;
+  room.tick(now);
+
+  assert.equal(hints.length, 1);
+  assert.equal(hints[0].playerId, "one");
+  assert.match(hints[0].hint.text, /à sua frente, entre 5 e 12 m/);
+  assert.equal(
+    broadcastEvents.some((event) => event.name === "game:hint"),
+    false,
+  );
+
+  now += 50;
+  room.tick(now);
+  assert.equal(hints.length, 1);
+});
+
+test("private hints do not reveal players while they are invisible", () => {
+  let now = 1000;
+  const hints = [];
+  const room = new GameRoom("HIDE1", {
+    random: () => 0,
+    clock: () => now,
+    onHint: (playerId, hint) => hints.push({ playerId, hint }),
+  });
+  room.addPlayer("one", "Pegador");
+  room.addPlayer("two", "Invisível");
+  room.startGame("one");
+  now += 4500;
+  room.tick(now);
+
+  const hiddenPlayer = room.players.get("two");
+  hiddenPlayer.powerUp = "invisibility";
+  hiddenPlayer.powerUpExpiresAt = now + 5000;
+  room.nextHintAt = now;
+  room.updateChaserHint(now);
+
+  assert.equal(hints.length, 1);
+  assert.equal(hints[0].playerId, "one");
+  assert.match(hints[0].hint.text, /Ninguém está visível/);
+  assert.doesNotMatch(hints[0].hint.text, /distância|frente|direita|esquerda/);
 });
 
 test("room refuses players after a round has started", () => {

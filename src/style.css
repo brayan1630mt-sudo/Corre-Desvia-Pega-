@@ -1464,7 +1464,8 @@ kbd {
 
 .tag-status,
 .timer-card,
-.power-status {
+.power-status,
+.tagger-timer {
   display: flex;
   min-height: 52px;
   align-items: center;
@@ -1516,6 +1517,40 @@ kbd {
   font-family: var(--mono);
   font-size: 7px;
   letter-spacing: 0.8px;
+}
+
+.tagger-timer {
+  min-width: 118px;
+  flex-direction: column;
+  justify-content: center;
+  gap: 3px;
+  padding: 6px 11px;
+  border-color: rgba(232, 123, 92, 0.38);
+  background: rgba(255, 244, 235, 0.94);
+}
+
+.tagger-timer[hidden] {
+  display: none;
+}
+
+.tagger-timer > small {
+  color: #a56e62;
+  font-family: var(--mono);
+  font-size: 7px;
+  letter-spacing: 0.55px;
+}
+
+.tagger-timer > strong {
+  color: #cf574e;
+  font-family: var(--mono);
+  font-size: 19px;
+  line-height: 1;
+}
+
+.tagger-timer.is-urgent {
+  border-color: rgba(225, 59, 49, 0.82);
+  background: #ffe3dc;
+  animation: timer-blink 550ms ease-in-out infinite;
 }
 
 .tag-copy strong {
@@ -1953,6 +1988,89 @@ kbd {
   letter-spacing: -1.6px;
 }
 
+.eliminated-overlay {
+  position: absolute;
+  z-index: 7;
+  top: 50%;
+  left: 50%;
+  display: grid;
+  min-width: min(320px, calc(100vw - 36px));
+  gap: 7px;
+  padding: 20px 24px;
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  border-radius: 18px;
+  background: rgba(26, 31, 44, 0.84);
+  color: #fff;
+  text-align: center;
+  transform: translate(-50%, -50%);
+  backdrop-filter: blur(12px);
+}
+
+.eliminated-overlay[hidden] {
+  display: none;
+}
+
+.eliminated-overlay strong {
+  color: #ff8878;
+  font-family: var(--display);
+  font-size: 29px;
+}
+
+.eliminated-overlay span {
+  font-size: 12px;
+}
+
+.ink-overlay,
+.slipstream-overlay {
+  position: absolute;
+  z-index: 4;
+  inset: 0;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 140ms ease;
+}
+
+.ink-overlay.is-active {
+  opacity: 1;
+  background:
+    radial-gradient(ellipse at 18% 21%, rgba(39, 20, 66, 0.78) 0 3%, transparent 14%),
+    radial-gradient(ellipse at 82% 17%, rgba(60, 35, 91, 0.7) 0 2%, transparent 12%),
+    radial-gradient(ellipse at 76% 79%, rgba(27, 21, 48, 0.78) 0 4%, transparent 16%),
+    radial-gradient(ellipse at 24% 84%, rgba(68, 42, 89, 0.68) 0 3%, transparent 13%);
+}
+
+.slipstream-overlay.is-active {
+  opacity: 1;
+  background: repeating-linear-gradient(
+    105deg,
+    transparent 0 9%,
+    rgba(211, 250, 255, 0.24) 9.2% 9.5%,
+    transparent 9.8% 18%
+  );
+  animation: wind-streaks 520ms linear infinite;
+}
+
+.slipstream-overlay > span {
+  position: absolute;
+  top: 42%;
+  left: 50%;
+  padding: 6px 10px;
+  border: 1px solid rgba(219, 250, 255, 0.7);
+  border-radius: 999px;
+  background: rgba(37, 83, 91, 0.48);
+  color: #e7fcff;
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 1px;
+  transform: translateX(-50%);
+}
+
+@keyframes wind-streaks {
+  from { background-position: 0 0; }
+  to { background-position: 120px 0; }
+}
+
 .touch-controls {
   position: absolute;
   z-index: 8;
@@ -1973,6 +2091,7 @@ kbd {
 .sprint-button,
 .jump-button,
 .dash-button,
+.slide-button,
 .power-button {
   pointer-events: auto;
   touch-action: none;
@@ -2009,6 +2128,35 @@ kbd {
     transform 100ms ease,
     background 100ms ease,
     opacity 100ms ease;
+}
+
+.slide-button {
+  display: flex;
+  width: 58px;
+  height: 58px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  border: 1px solid rgba(255, 255, 255, 0.78);
+  border-radius: 50%;
+  background: rgba(129, 210, 224, 0.9);
+  box-shadow: 0 6px 18px rgba(34, 31, 23, 0.18);
+  color: #23434a;
+  cursor: pointer;
+  font-family: var(--mono);
+  font-size: 7px;
+  font-weight: 700;
+}
+
+.slide-button > span {
+  font-size: 11px;
+  line-height: 1;
+}
+
+.slide-button.is-sliding {
+  transform: scale(0.92);
+  background: #a8f0f3;
 }
 
 .power-button {
@@ -2935,7 +3083,8 @@ kbd {
 
   .tag-status,
   .timer-card,
-  .power-status {
+  .power-status,
+  .tagger-timer {
     min-height: 40px;
     border-radius: 12px;
     box-shadow: 0 4px 12px rgba(23, 34, 38, 0.09);
@@ -2998,6 +3147,20 @@ kbd {
   .power-status > strong {
     max-width: 100%;
     font-size: 8px;
+  }
+
+  .tagger-timer {
+    position: absolute;
+    top: 46px;
+    left: 0;
+    min-width: 106px;
+    min-height: 32px;
+    align-items: flex-start;
+    padding: 5px 8px;
+  }
+
+  .tagger-timer > strong {
+    font-size: 15px;
   }
 
   .timer-card strong {
@@ -3083,6 +3246,11 @@ kbd {
     height: 52px;
   }
 
+  .slide-button {
+    width: 52px;
+    height: 52px;
+  }
+
   .touch-action-group {
     gap: 8px;
     margin-bottom: 5px;
@@ -3124,6 +3292,7 @@ kbd {
 
   .dash-button,
   .jump-button,
+  .slide-button,
   .power-button {
     width: 50px;
     height: 50px;

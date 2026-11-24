@@ -60,6 +60,7 @@ export class Game {
     this.roomState = state;
     this.arena.setPowerUp(state.powerUp);
     this.arena.setSnowballs(state.snowballs);
+    this.arena.setEffects(state.effects);
     const activeIds = new Set(state.players.map((player) => player.id));
     for (const [id, playerView] of this.players) {
       if (!activeIds.has(id)) {
@@ -94,6 +95,7 @@ export class Game {
     this.arena.setFirstPersonArmsVisible(false);
     this.arena.setPowerUp(null);
     this.arena.setSnowballs([]);
+    this.arena.setEffects([]);
     this.input.setEnabled(false);
   }
 
@@ -129,10 +131,14 @@ export class Game {
   }
 
   private updateInputState(): void {
+    const localState = this.roomState?.players.find(
+      (player) => player.id === this.localPlayerId,
+    );
     const shouldListen =
       this.active &&
       this.roomState?.phase === "playing" &&
-      this.players.has(this.localPlayerId);
+      this.players.has(this.localPlayerId) &&
+      !localState?.isEliminated;
     this.input.setEnabled(Boolean(shouldListen));
   }
 
@@ -149,7 +155,8 @@ export class Game {
       Boolean(
         localPlayer &&
           this.roomState &&
-          this.roomState.phase !== "finished",
+          this.roomState.phase !== "finished" &&
+          !localPlayer.isEliminated,
       ),
     );
     if (localPlayer) {
@@ -180,20 +187,40 @@ export class Game {
 
     const localPlayer = this.players.get(this.localPlayerId);
     if (localPlayer) {
-      const position = localPlayer.getPosition();
       const localState = this.roomState?.players.find(
         (player) => player.id === this.localPlayerId,
       );
-      this.arena.focusOn(
-        position,
-        deltaSeconds,
-        localState?.isMoving ?? false,
-        localState?.isSprinting ?? false,
-        position.y > 0.04,
-        localState?.isDashing ?? false,
-      );
-      this.lastLocalPlayerPosition.copy(position);
-      this.hasLocalPlayerPosition = true;
+      if (localState?.isEliminated) {
+        const watched = this.roomState?.players.find(
+          (player) => !player.isEliminated,
+        );
+        const watchedView = watched ? this.players.get(watched.id) : null;
+        if (watchedView) {
+          this.arena.focusOn(watchedView.getPosition(), deltaSeconds);
+        } else {
+          this.arena.focusOn(localPlayer.getPosition(), deltaSeconds);
+        }
+      } else {
+        localPlayer.predictMovement(
+          this.input.getCurrentInput(),
+          deltaSeconds,
+          localState?.isSliding ?? false,
+          localState?.isDashing ?? false,
+        );
+        const position = localPlayer.getPosition();
+        this.arena.focusOn(
+          position,
+          deltaSeconds,
+          localState?.isMoving ?? false,
+          localState?.isSprinting ?? false,
+          position.y > 0.04,
+          localState?.isDashing ?? false,
+          localState?.wallRunSide ?? 0,
+          localState?.isSliding ?? false,
+        );
+        this.lastLocalPlayerPosition.copy(position);
+        this.hasLocalPlayerPosition = true;
+      }
     } else if (this.roomState?.players[0]) {
       const initialPlayer = this.players.get(this.roomState.players[0].id);
       if (initialPlayer) {

@@ -14,7 +14,11 @@ export type PowerUpType =
   | "jump"
   | "invisibility"
   | "freeze"
-  | "grapple";
+  | "grapple"
+  | "shockwave"
+  | "ink"
+  | "gravity"
+  | "swap";
 
 export interface Vector3 {
   x: number;
@@ -31,9 +35,21 @@ export interface PowerUpState {
 export interface SnowballState {
   id: string;
   ownerId: string;
+  kind: "snowball" | "ink";
   x: number;
   y: number;
   z: number;
+}
+
+export interface ArenaEffectState {
+  id: string;
+  type: "shockwave" | "swap" | "ink";
+  x: number;
+  y: number;
+  z: number;
+  end: Vector3 | null;
+  startedAt: number;
+  expiresAt: number;
 }
 
 export interface PlayerInput {
@@ -43,6 +59,7 @@ export interface PlayerInput {
   jump: boolean;
   dash: boolean;
   usePower: boolean;
+  slide: boolean;
   yaw: number;
   pitch: number;
 }
@@ -61,6 +78,15 @@ export interface PlayerState {
   grappleAnchor: Vector3 | null;
   dashCooldownEndsAt: number;
   survivalPoints: number;
+  taggerPenaltyEndsAt: number;
+  isEliminated: boolean;
+  isSliding: boolean;
+  isWallRunning: boolean;
+  wallRunSide: -1 | 0 | 1;
+  isVaulting: boolean;
+  isSlipstreaming: boolean;
+  inkedUntil: number;
+  gravityInvertedUntil: number;
   rotation: number;
   pitch: number;
   isIt: boolean;
@@ -77,6 +103,7 @@ export interface RoomState {
   players: PlayerState[];
   powerUp: PowerUpState | null;
   snowballs: SnowballState[];
+  effects: ArenaEffectState[];
   hostId: string;
   itPlayerId: string | null;
   timeLeft: number;
@@ -183,7 +210,19 @@ export interface ObstacleShape {
   depth: number;
   height: number;
   collisionHeight: number;
-  kind: "building" | "barrier";
+  kind: "building" | "barrier" | "wall";
+}
+
+export interface ArenaRamp {
+  id: string;
+  x: number;
+  z: number;
+  width: number;
+  depth: number;
+  axis: "x" | "z";
+  direction: -1 | 1;
+  startY: number;
+  endY: number;
 }
 
 export interface NotificationItem {

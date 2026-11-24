@@ -124,6 +124,9 @@ function createRoom() {
         onEvent: (eventName, payload) => {
           io.to(code).emit(eventName, payload);
         },
+        onHint: (playerId, payload) => {
+          io.to(playerId).emit("game:hint", payload);
+        },
       });
       rooms.set(code, room);
       return room;
